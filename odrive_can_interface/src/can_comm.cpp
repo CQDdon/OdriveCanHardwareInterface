@@ -88,6 +88,11 @@ bool CANInterface::sendFrame(uint32_t frame_id, const vector<uint8_t> &data)
     if (nbytes != static_cast<int>(sizeof(frame)))
     {
         cerr << "Error: Failed to send CAN frame." << endl;
+        cerr << "  Socket: " << can_socket_ << endl;
+        cerr << "  Frame ID: 0x" << hex << frame_id << dec << endl;
+        cerr << "  Expected bytes: " << sizeof(frame) << endl;
+        cerr << "  Actual bytes written: " << nbytes << endl;
+        cerr << "  errno: " << errno << " (" << strerror(errno) << ")" << endl;
         return false;
     }
 

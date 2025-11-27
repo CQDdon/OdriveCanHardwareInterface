@@ -38,10 +38,28 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE "ODRIVE_CAN_INTERFACE_BUILDIN
 # đảm bảo bạn có file odrive_can_interface.xml ở gốc package
 pluginlib_export_plugin_description_file(hardware_interface odrive_can_interface.xml)
 
+# ===== CAN Test Node =====
+add_executable(odrive_homing src/odrive_homing.cpp src/can_comm.cpp src/odrive_motor)
+add_executable(odrive_calib src/odrive_calib.cpp src/can_comm.cpp src/odrive_motor)
+target_include_directories(odrive_homing    
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(odrive_homing rclcpp)
+target_include_directories(odrive_calib    
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(odrive_calib rclcpp)
+
 # ===== Export headers + lib =====
 install(
   DIRECTORY include/
   DESTINATION include
+)
+install(
+  DIRECTORY launch urdf
+  DESTINATION share/${PROJECT_NAME}/
 )
 
 install(
@@ -50,6 +68,11 @@ install(
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
+)
+
+# Install CAN test node
+install(TARGETS odrive_homing odrive_calib
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 # Export target & include dirs cho package khác dùng

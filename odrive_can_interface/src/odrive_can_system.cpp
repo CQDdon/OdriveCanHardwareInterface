@@ -184,8 +184,22 @@ namespace odrive_can_interface
       m->clearErrors();
     for (auto &m : motors_)
       m->setTarget(0.0f);
+
+    // Start homing sequence
+    // RCLCPP_INFO(logger_, "Starting homing sequence...");
+    // for (auto &m : motors_)
+    //   if (m->getDeviceId() % 2 != 0)
+    //     m->setHoming();
+
+    // Wait for homing to complete (typical homing takes 2-5 seconds)
+    // RCLCPP_INFO(logger_, "Waiting for homing to complete...");
+    // std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    // Now enable closed loop control
+    RCLCPP_INFO(logger_, "Enabling closed loop control...");
     for (auto &m : motors_)
       m->closeLoopControl();
+
     return hardware_interface::CallbackReturn::SUCCESS;
   }
 
@@ -195,9 +209,10 @@ namespace odrive_can_interface
   {
     RCLCPP_INFO(logger_, "on_deactivate(): disabling drives...");
     for (auto &m : motors_)
+    {
+      m->setTarget(0.0f);
       m->idle();
-    if (can_)
-      can_->stopReceive();
+    }
     return hardware_interface::CallbackReturn::SUCCESS;
   }
 
@@ -206,10 +221,14 @@ namespace odrive_can_interface
       const rclcpp_lifecycle::State &)
   {
     RCLCPP_INFO(logger_, "on_cleanup(): releasing resources...");
+    for (auto &m : motors_)
+    {
+      m->clearErrors();
+    }
     if (can_)
       can_->stopReceive();
     motors_.clear();
-    can_.reset();
+    // can_.reset();
     return hardware_interface::CallbackReturn::SUCCESS;
   }
 
@@ -218,9 +237,9 @@ namespace odrive_can_interface
       const rclcpp_lifecycle::State &)
   {
     RCLCPP_INFO(logger_, "on_shutdown(): powering down hardware...");
-    if (can_)
-      can_->stopReceive();
-    can_.reset();
+    // if (can_)
+    //   can_->stopReceive();
+    // can_.reset();
     return hardware_interface::CallbackReturn::SUCCESS;
   }
 
@@ -230,8 +249,8 @@ namespace odrive_can_interface
   {
     for (size_t i = 0; i < motors_.size(); ++i)
     {
-      position_[i] = static_cast<double>(motors_[i]->getPosition());
-      velocity_[i] = static_cast<double>(motors_[i]->getVelocity());
+      position_[i] = /*static_cast<double>(2*3.141592)**/ static_cast<double>(motors_[i]->getPosition());
+      velocity_[i] = /*static_cast<double>(2*3.141592)**/ static_cast<double>(motors_[i]->getVelocity());
     }
     return hardware_interface::return_type::OK;
   }
@@ -248,6 +267,7 @@ namespace odrive_can_interface
       else
         val = static_cast<float>(command_pos_[i]);
 
+      val = val / (2 * 3.141592);
       (void)motors_[i]->setTarget(val);
     }
     return hardware_interface::return_type::OK;

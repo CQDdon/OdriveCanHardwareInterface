@@ -73,14 +73,14 @@ def generate_launch_description():
           },
         arguments=['--ros-args', '--log-level', 'INFO']
     )
-    delayed_controller_manager = TimerAction(period=3.0, actions=[controller_manager])
+    delayed_controller_manager = TimerAction(period=1.0, actions=[controller_manager])
     
     rviz2 = Node(
         package='rviz2',
         executable='rviz2',
         arguments=['-d', rviz_path])
     
-    delayed_rviz = TimerAction(period=3.0, actions=[rviz2])
+    delayed_rviz = TimerAction(period=1.0, actions=[rviz2])
     
     joint_broad_spawner = Node(
         package='controller_manager',
@@ -101,6 +101,14 @@ def generate_launch_description():
         arguments=["swerve_controller", "--controller-manager", "/controller_manager", '--ros-args', '--log-level', 'FATAL'],
         # output="screen",
     )
+
+    hsh_node = Node(
+        package='hardware_system_handler',
+        executable='hsh_node',
+        name='hsh_node',
+        output='screen',
+        arguments=['--ros-args', '--log-level', 'INFO']
+    )
     delayed_swerve_controller_spawner = RegisterEventHandler(
         event_handler=OnProcessStart(
             target_action=controller_manager,
@@ -112,5 +120,6 @@ def generate_launch_description():
     delayed_controller_manager,
     delayed_swerve_controller_spawner,
     delayed_joint_broad_spawner,
-    delayed_rviz
+    delayed_rviz,
+    hsh_node
 ])

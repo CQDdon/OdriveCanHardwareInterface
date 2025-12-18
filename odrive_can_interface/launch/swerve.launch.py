@@ -98,7 +98,7 @@ def generate_launch_description():
     swerve_controller_spawner = Node(
         package='controller_manager',
         executable='spawner',
-        arguments=["swerve_controller", "--controller-manager", "/controller_manager", '--ros-args', '--log-level', 'INFO'],
+        arguments=["swerve_controller", "--controller-manager", "/controller_manager", '--ros-args', '--log-level', 'FATAL'],
         # output="screen",
     )
     delayed_swerve_controller_spawner = RegisterEventHandler(

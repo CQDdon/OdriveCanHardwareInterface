@@ -7,16 +7,18 @@ find_package(rclcpp REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 
 # ===== Library sources =====
-set(MERC_HW_SRCS
+set(ODRIVE_HW_SRCS
   src/can_comm.cpp
   src/odrive_motor.cpp
   src/odrive_can_system.cpp
+  src/shared_memory.cpp
 )
 
 # ===== Tạo thư viện =====
-add_library(${PROJECT_NAME} SHARED ${MERC_HW_SRCS})
+add_library(${PROJECT_NAME} SHARED ${ODRIVE_HW_SRCS})
 
 # Include dirs chuẩn ament (BUILD + INSTALL)
 target_include_directories(${PROJECT_NAME}
@@ -29,7 +31,9 @@ ament_target_dependencies(${PROJECT_NAME}
   rclcpp
   rclcpp_lifecycle
   pluginlib
-  hardware_interface)
+  hardware_interface
+  diagnostic_msgs
+  )
 
 # Visibility (nếu cần)
 target_compile_definitions(${PROJECT_NAME} PRIVATE "ODRIVE_CAN_INTERFACE_BUILDING_DLL")

@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <thread>
 #include <chrono>
+#include <mutex>
+#include <atomic>
 
 #include "rclcpp/rclcpp.hpp"
 #include "hardware_interface/system_interface.hpp"
@@ -15,8 +17,11 @@
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
 #include "pluginlib/class_list_macros.hpp"
 
+
+
 #include "odrive_can_interface/odrive_motor.hpp"
 #include "odrive_can_interface/can_comm.hpp"
+#include "odrive_can_interface/shared_memory.hpp"
 
 namespace odrive_can_interface
 {
@@ -29,7 +34,6 @@ namespace odrive_can_interface
         // Lifecycle
         hardware_interface::CallbackReturn on_init(
             const hardware_interface::HardwareInfo &info) override;
-
         hardware_interface::CallbackReturn on_configure(
             const rclcpp_lifecycle::State &previous_state) override;
 
@@ -76,7 +80,34 @@ namespace odrive_can_interface
         std::vector<double> command_pos_;
         std::vector<double> command_vel_;
 
+    // Shared memory + command thread
+        ShmCommand *cmd_shm_ptr_{nullptr};
+        ShmState *state_shm_ptr_{nullptr};
+        bool shm_initialized_{false};
+
+        std::thread command_thread_;
+        std::atomic<bool> command_thread_running_{false};
+        std::mutex command_mutex_;
+        std::vector<double> shm_command_targets_;
+        bool shm_command_valid_{false};
+        uint32_t last_command_sequence_{0};
+
+        std::vector<size_t> steer_joint_indices_;
+        std::vector<size_t> drive_joint_indices_;
+
+        bool initialize_shared_memory();
+        void cleanup_shared_memory();
+        void start_command_thread();
+        void stop_command_thread();
+        void command_polling_loop();
+
+    
         std::shared_ptr<OdriveMotor> make_motor_for_joint(const hardware_interface::ComponentInfo &joint);
-    };
+    SharedMemoryInterface shmitf_;
+    SharedMemorySegment   shmseg_{SHM_CMD, sizeof(ShmCommand)};
+    };  
+
 
 } // namespace odrive_can_interface
+
+

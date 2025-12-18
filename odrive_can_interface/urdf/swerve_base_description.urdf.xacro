@@ -623,6 +623,7 @@
         <param name="can_port">can0</param>
         <param name="baud_rate">500000</param>
         <param name="timeout_ms">1000</param>
+        <param name="status_publish_rate">20.0</param>
         <!-- <param name="wheel_diameter">100</param> -->
 
     </hardware>

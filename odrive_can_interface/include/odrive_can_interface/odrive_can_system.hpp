@@ -62,6 +62,9 @@ namespace odrive_can_interface
 
     private:
         rclcpp::Logger logger_{rclcpp::get_logger("OdriveCANSystem")};
+        rclcpp::Logger  can_thread_logger_{rclcpp::get_logger("Can Thread")};
+        rclcpp::Logger  hwi_thread_logger_{rclcpp::get_logger("HWI Thread")};
+        rclcpp::Logger  hsh_thread_logger_{rclcpp::get_logger("HSH Thread")};
 
         // HW params (from URDF <hardware><param>)
         std::string can_port_{"can0"};
@@ -90,6 +93,9 @@ namespace odrive_can_interface
 
     // Control flag
         std::atomic<bool> running_{false};
+        std::atomic<bool> fatal_error_{false};
+        std::string last_error_;
+
 
     // Thread functions
         void HSH_HWI();

@@ -119,82 +119,43 @@ namespace odrive_can_interface
   }
 
   // ========== EXPORT STATE IF ==========
-  // std::vector<hardware_interface::StateInterface>
-  // OdriveCANSystem::export_state_interfaces()
-  // {
-  //   std::vector<hardware_interface::StateInterface> out;
-  //   out.reserve(info_.joints.size() * 2);
+  std::vector<hardware_interface::StateInterface>
+  OdriveCANSystem::export_state_interfaces()
+  {
+    std::vector<hardware_interface::StateInterface> out;
+    out.reserve(info_.joints.size() * 2);
 
-  //   for (size_t i = 0; i < info_.joints.size(); ++i)
-  //   {
-  //     const auto &jn = info_.joints[i].name;
-  //     out.emplace_back(jn, hardware_interface::HW_IF_POSITION, &position_[i]);
-  //     out.emplace_back(jn, hardware_interface::HW_IF_VELOCITY, &velocity_[i]);
-  //   }
-  //   return out;
-  // }
+    for (size_t i = 0; i < info_.joints.size(); ++i)
+    {
+      const auto &jn = info_.joints[i].name;
+      out.emplace_back(jn, hardware_interface::HW_IF_POSITION, &position_[i]);
+      out.emplace_back(jn, hardware_interface::HW_IF_VELOCITY, &velocity_[i]);
+    }
+    return out;
+  }
 
   // ========== EXPORT CMD IF ==========
-  // std::vector<hardware_interface::CommandInterface>
-  // OdriveCANSystem::export_command_interfaces()
-  // {
-  //   std::vector<hardware_interface::CommandInterface> out;
-  //   out.reserve(info_.joints.size());
+  std::vector<hardware_interface::CommandInterface>
+  OdriveCANSystem::export_command_interfaces()
+  {
+    std::vector<hardware_interface::CommandInterface> out;
+    out.reserve(info_.joints.size());
 
-  //   for (size_t i = 0; i < info_.joints.size(); ++i)
-  //   {
-  //     const auto &jn = info_.joints[i].name;
-  //     if (joint_mode_[i] == OdriveMotor::VELOCITY)
-  //       out.emplace_back(jn, hardware_interface::HW_IF_VELOCITY, &command_vel_[i]);
-  //     else
-  //       out.emplace_back(jn, hardware_interface::HW_IF_POSITION, &command_pos_[i]);
-  //   }
-  //   return out;
-  // }
+    for (size_t i = 0; i < info_.joints.size(); ++i)
+    {
+      const auto &jn = info_.joints[i].name;
+      if (joint_mode_[i] == OdriveMotor::VELOCITY)
+        out.emplace_back(jn, hardware_interface::HW_IF_VELOCITY, &command_vel_[i]);
+      else
+        out.emplace_back(jn, hardware_interface::HW_IF_POSITION, &command_pos_[i]);
+    }
+    return out;
+  }
 
   // ========== CONFIGURE ==========
   hardware_interface::CallbackReturn OdriveCANSystem::on_configure(
       const rclcpp_lifecycle::State &)
   {
-    RCLCPP_INFO(logger_, "on_configure(): opening CAN and instantiating motors...");
-
-    can_ = std::make_shared<CANInterface>();
-    if (!can_->openInterface(can_port_))
-    {
-      RCLCPP_ERROR(logger_, "Failed to open CAN interface: %s", can_port_.c_str());
-      return hardware_interface::CallbackReturn::ERROR;
-    }
-    RCLCPP_INFO(logger_,
-                "CAN %s opened (requested baud %d). "
-                "NOTE: set bitrate via: sudo ip link set %s type can bitrate %d; sudo ip link set %s up",
-                can_port_.c_str(), baud_rate_, can_port_.c_str(), baud_rate_, can_port_.c_str());
-
-    motors_.clear();
-    motors_.reserve(info_.joints.size());
-    try
-    {
-      for (size_t i = 0; i < info_.joints.size(); ++i)
-      {
-        const auto &joint = info_.joints[i];
-        const uint8_t id = static_cast<uint8_t>(std::stoi(joint.parameters.at("id")));
-        motors_.emplace_back(std::make_shared<OdriveMotor>(id, joint_mode_[i], can_.get()));
-      }
-    }
-    catch (const std::exception &e)
-    {
-      RCLCPP_ERROR(logger_, "Invalid joint parameter (id): %s", e.what());
-      return hardware_interface::CallbackReturn::ERROR;
-    }
-
-    can_->registerFeedbackCallback([this](uint32_t can_id, const uint8_t *data, uint8_t dlc)
-                                   {
-    const uint32_t axis = (can_id >> 5);
-    for (auto &m : motors_) {
-      if (m->getDeviceId() == axis) { m->onCanFeedback(can_id, data, dlc); break; }
-    } });
-
-    can_->startReceive();
-
     // ShmCommand cmd{};
     ShmState st{};
     st.axis_count = static_cast<uint8_t>(std::min(info_.joints.size(), static_cast<size_t>(SHM_MAX_AXES)));
@@ -206,7 +167,7 @@ namespace odrive_can_interface
     }
 
     if (!shmitf_.write_state(st)) {
-      RCLCPP_WARN(logger_, "Failed to write initial command block to shared memory");
+      RCLCPP_WARN(logger_, "Failed to write initial state to shared memory");
     } else {
       RCLCPP_INFO(logger_, "Axis count advertised via SHM: %u", st.axis_count);
     }
@@ -225,9 +186,9 @@ namespace odrive_can_interface
     running_ = true;
 
   // Start threads
-  hsh_to_hwi_thread_ = std::thread(&OdriveCANSystem::HSH_HWI, this);
-  hwi_to_hsh_thread_ = std::thread(&OdriveCANSystem::HWI_HSH, this);
-  can_interface_thread_ = std::thread(&OdriveCANSystem::CanInterface, this);
+    hsh_to_hwi_thread_ = std::thread(&OdriveCANSystem::HSH_HWI, this);
+    hwi_to_hsh_thread_ = std::thread(&OdriveCANSystem::HWI_HSH, this);
+    can_interface_thread_ = std::thread(&OdriveCANSystem::CanInterface, this);
 
     // RCLCPP_INFO(logger_, "on_activate(): enabling drives...");
     // for (auto &m : motors_)
@@ -252,6 +213,12 @@ namespace odrive_can_interface
                     static_cast<unsigned>(i),
                     state_->axes[i].can_id);
       }
+    }
+    if (fatal_error_)
+    {
+      RCLCPP_ERROR(logger_, "Hardware fatal error: %s",
+                  last_error_.c_str());
+      return hardware_interface::CallbackReturn::ERROR;
     }
     return hardware_interface::CallbackReturn::SUCCESS;
   }
@@ -339,35 +306,104 @@ namespace odrive_can_interface
     return hardware_interface::return_type::OK;
   }
 
-  // ========== Threads ==========
+  // ========== READ THREAD==========
   void OdriveCANSystem::HSH_HWI()
   {
     RCLCPP_INFO(logger_, "HSH_HWI thread started");
     while (running_)
     {
+      if(auto *state_= shmitf_.state()){
+        for( size_t i = 0; i < motors_.size(); ++i){
+          state_->axes[i].position = static_cast<float>(2*3.141592)* static_cast<float>(motors_[i]->getPosition());  // Change from Round to Radian
+          state_->axes[i].velocity = static_cast<float>(2*3.141592)* static_cast<float>(motors_[i]->getVelocity());  // RPS -> Rad/s
+        }
+      }else{
+        RCLCPP_ERROR(hsh_thread_logger_, "Failed to read state from shared memory");
+        fatal_error_ = true;
+        running_ = false;   // stop all threads
+        return;
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     RCLCPP_INFO(logger_, "HSH_HWI thread stopped");
   }
-
+  // ========== WRITE THREAD==========
   void OdriveCANSystem::HWI_HSH()
   {
-    RCLCPP_INFO(logger_, "HWI_HSH thread started");
+    RCLCPP_INFO(hwi_thread_logger_, "HWI_HSH thread started");
     while (running_)
     {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      ShmCommand cmd{};
+      for(size_t i = 0; i < motors_.size(); ++i){
+        if (joint_mode_[i] == OdriveMotor::VELOCITY){
+          cmd.wheel_velocity[i] = static_cast<float>(command_vel_[i]);
+        }else{
+          cmd.steer_angle[i] = static_cast<float>(command_pos_[i]);
+        }
+      if (!shmitf_.write_cmd(cmd)) {
+        RCLCPP_ERROR(hwi_thread_logger_, "Failed to write command to shared memory");
+        fatal_error_ = true;
+        running_ = false;   // stop all threads
+        return;
+      }
     }
-    RCLCPP_INFO(logger_, "HWI_HSH thread stopped");
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    RCLCPP_INFO(hwi_thread_logger_, "HWI_HSH thread stopped");
   }
-
+  // ========== CAN THREAD==========
   void OdriveCANSystem::CanInterface()
   {
-    RCLCPP_INFO(logger_, "CAN interface thread started");
+    RCLCPP_INFO(can_thread_logger_, "CAN interface thread started");
     while (running_)
     {
+
+      RCLCPP_INFO(can_thread_logger_, "on_configure(): opening CAN and instantiating motors...");
+
+      can_ = std::make_shared<CANInterface>();
+      if (!can_->openInterface(can_port_))
+      {
+        RCLCPP_ERROR(can_thread_logger_, "Failed to open CAN interface: %s", can_port_.c_str());
+        fatal_error_ = true;
+        running_ = false;   // stop all threads
+        return;
+      }
+      RCLCPP_INFO(can_thread_logger_,
+                  "CAN %s opened (requested baud %d). "
+                  "NOTE: set bitrate via: sudo ip link set %s type can bitrate %d; sudo ip link set %s up",
+                  can_port_.c_str(), baud_rate_, can_port_.c_str(), baud_rate_, can_port_.c_str());
+
+      motors_.clear();
+      motors_.reserve(info_.joints.size());
+      try
+      {
+        for (size_t i = 0; i < info_.joints.size(); ++i)
+        {
+          const auto &joint = info_.joints[i];
+          const uint8_t id = static_cast<uint8_t>(std::stoi(joint.parameters.at("id")));
+          motors_.emplace_back(std::make_shared<OdriveMotor>(id, joint_mode_[i], can_.get()));
+        }
+      }
+      catch (const std::exception &e)
+      {
+        RCLCPP_ERROR(can_thread_logger_, "Invalid joint parameter (id): %s", e.what());
+        fatal_error_ = true;
+        running_ = false;   // stop all threads
+        return;
+      }
+
+      can_->registerFeedbackCallback([this](uint32_t can_id, const uint8_t *data, uint8_t dlc)
+                                    {
+      const uint32_t axis = (can_id >> 5);
+      for (auto &m : motors_) {
+        if (m->getDeviceId() == axis) { m->onCanFeedback(can_id, data, dlc); break; }
+      } });
+
+      can_->startReceive();
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    RCLCPP_INFO(logger_, "CAN interface thread stopped");
+
+    RCLCPP_INFO(can_thread_logger_, "CAN interface thread stopped");
   }
 
 } // namespace odrive_can_interface

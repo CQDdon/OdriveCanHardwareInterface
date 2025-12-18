@@ -11,7 +11,7 @@
 constexpr const char* SHM_CMD = "/hsh_to_hwi_cmd";
 constexpr const char* SHM_STATE = "/hwi_to_hsh_state";
 
-constexpr size_t SHM_MAX_AXES = 6 ;
+constexpr size_t SHM_MAX_AXES = 8 ;
 
 struct AxisRawFeedback {
 

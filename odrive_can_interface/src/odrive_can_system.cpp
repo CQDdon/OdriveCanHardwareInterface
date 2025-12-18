@@ -1,5 +1,7 @@
 #include "odrive_can_interface/odrive_can_system.hpp"
 
+
+
 namespace odrive_can_interface
 {
 
@@ -117,38 +119,38 @@ namespace odrive_can_interface
   }
 
   // ========== EXPORT STATE IF ==========
-  std::vector<hardware_interface::StateInterface>
-  OdriveCANSystem::export_state_interfaces()
-  {
-    std::vector<hardware_interface::StateInterface> out;
-    out.reserve(info_.joints.size() * 2);
+  // std::vector<hardware_interface::StateInterface>
+  // OdriveCANSystem::export_state_interfaces()
+  // {
+  //   std::vector<hardware_interface::StateInterface> out;
+  //   out.reserve(info_.joints.size() * 2);
 
-    for (size_t i = 0; i < info_.joints.size(); ++i)
-    {
-      const auto &jn = info_.joints[i].name;
-      out.emplace_back(jn, hardware_interface::HW_IF_POSITION, &position_[i]);
-      out.emplace_back(jn, hardware_interface::HW_IF_VELOCITY, &velocity_[i]);
-    }
-    return out;
-  }
+  //   for (size_t i = 0; i < info_.joints.size(); ++i)
+  //   {
+  //     const auto &jn = info_.joints[i].name;
+  //     out.emplace_back(jn, hardware_interface::HW_IF_POSITION, &position_[i]);
+  //     out.emplace_back(jn, hardware_interface::HW_IF_VELOCITY, &velocity_[i]);
+  //   }
+  //   return out;
+  // }
 
   // ========== EXPORT CMD IF ==========
-  std::vector<hardware_interface::CommandInterface>
-  OdriveCANSystem::export_command_interfaces()
-  {
-    std::vector<hardware_interface::CommandInterface> out;
-    out.reserve(info_.joints.size());
+  // std::vector<hardware_interface::CommandInterface>
+  // OdriveCANSystem::export_command_interfaces()
+  // {
+  //   std::vector<hardware_interface::CommandInterface> out;
+  //   out.reserve(info_.joints.size());
 
-    for (size_t i = 0; i < info_.joints.size(); ++i)
-    {
-      const auto &jn = info_.joints[i].name;
-      if (joint_mode_[i] == OdriveMotor::VELOCITY)
-        out.emplace_back(jn, hardware_interface::HW_IF_VELOCITY, &command_vel_[i]);
-      else
-        out.emplace_back(jn, hardware_interface::HW_IF_POSITION, &command_pos_[i]);
-    }
-    return out;
-  }
+  //   for (size_t i = 0; i < info_.joints.size(); ++i)
+  //   {
+  //     const auto &jn = info_.joints[i].name;
+  //     if (joint_mode_[i] == OdriveMotor::VELOCITY)
+  //       out.emplace_back(jn, hardware_interface::HW_IF_VELOCITY, &command_vel_[i]);
+  //     else
+  //       out.emplace_back(jn, hardware_interface::HW_IF_POSITION, &command_pos_[i]);
+  //   }
+  //   return out;
+  // }
 
   // ========== CONFIGURE ==========
   hardware_interface::CallbackReturn OdriveCANSystem::on_configure(
@@ -219,15 +221,23 @@ namespace odrive_can_interface
     if(!shmitf_.ready()&& shmseg_.is_open()){
       return hardware_interface::CallbackReturn::ERROR;
     }
-    RCLCPP_INFO(logger_, "on_activate(): enabling drives...");
-    for (auto &m : motors_)
-      m->clearErrors();
-    for (auto &m : motors_)
-      m->setTarget(0.0f);
-    //Enable closed loop control
-    RCLCPP_INFO(logger_, "Enabling closed loop control...");
-    for (auto &m : motors_)
-      m->closeLoopControl();
+
+    running_ = true;
+
+  // Start threads
+  hsh_to_hwi_thread_ = std::thread(&OdriveCANSystem::HSH_HWI, this);
+  hwi_to_hsh_thread_ = std::thread(&OdriveCANSystem::HWI_HSH, this);
+  can_interface_thread_ = std::thread(&OdriveCANSystem::CanInterface, this);
+
+    // RCLCPP_INFO(logger_, "on_activate(): enabling drives...");
+    // for (auto &m : motors_)
+    //   m->clearErrors();
+    // for (auto &m : motors_)
+    //   m->setTarget(0.0f);
+    // //Enable closed loop control
+    // RCLCPP_INFO(logger_, "Enabling closed loop control...");
+    // for (auto &m : motors_)
+    //   m->closeLoopControl();
 
     
     if(auto *state_= shmitf_.state())
@@ -251,12 +261,24 @@ namespace odrive_can_interface
   hardware_interface::CallbackReturn OdriveCANSystem::on_deactivate(
       const rclcpp_lifecycle::State &)
   {
-    RCLCPP_INFO(logger_, "on_deactivate(): disabling drives...");
-    for (auto &m : motors_)
-    {
-      m->setTarget(0.0f);
-      m->idle();
-    }
+    // RCLCPP_INFO(logger_, "on_deactivate(): disabling drives...");
+    // for (auto &m : motors_)
+    // {
+    //   m->setTarget(0.0f);
+    //   m->idle();
+    // }
+    RCLCPP_INFO(logger_,"Deactivating hardware interface...");
+
+    running_ = false;
+
+    if (hsh_to_hwi_thread_.joinable())
+      hsh_to_hwi_thread_.join();
+
+    if (hwi_to_hsh_thread_.joinable())
+      hwi_to_hsh_thread_.join();
+
+    if (can_interface_thread_.joinable())
+      can_interface_thread_.join();
     return hardware_interface::CallbackReturn::SUCCESS;
   }
 
@@ -317,8 +339,42 @@ namespace odrive_can_interface
     return hardware_interface::return_type::OK;
   }
 
+  // ========== Threads ==========
+  void OdriveCANSystem::HSH_HWI()
+  {
+    RCLCPP_INFO(logger_, "HSH_HWI thread started");
+    while (running_)
+    {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    RCLCPP_INFO(logger_, "HSH_HWI thread stopped");
+  }
+
+  void OdriveCANSystem::HWI_HSH()
+  {
+    RCLCPP_INFO(logger_, "HWI_HSH thread started");
+    while (running_)
+    {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    RCLCPP_INFO(logger_, "HWI_HSH thread stopped");
+  }
+
+  void OdriveCANSystem::CanInterface()
+  {
+    RCLCPP_INFO(logger_, "CAN interface thread started");
+    while (running_)
+    {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    RCLCPP_INFO(logger_, "CAN interface thread stopped");
+  }
+
 } // namespace odrive_can_interface
+
+
 
 #include "pluginlib/class_list_macros.hpp"
 PLUGINLIB_EXPORT_CLASS(odrive_can_interface::OdriveCANSystem,
                        hardware_interface::SystemInterface)
+

@@ -80,31 +80,22 @@ namespace odrive_can_interface
         std::vector<double> command_pos_;
         std::vector<double> command_vel_;
 
-    // Shared memory + command thread
-        ShmCommand *cmd_shm_ptr_{nullptr};
-        ShmState *state_shm_ptr_{nullptr};
-        bool shm_initialized_{false};
+    // Shared memory 
+        SharedMemoryInterface shmitf_;
+        SharedMemorySegment   shmseg_{SHM_CMD, sizeof(ShmCommand)};
+    // Threads
+        std::thread hsh_to_hwi_thread_;
+        std::thread hwi_to_hsh_thread_;
+        std::thread can_interface_thread_;
 
-        std::thread command_thread_;
-        std::atomic<bool> command_thread_running_{false};
-        std::mutex command_mutex_;
-        std::vector<double> shm_command_targets_;
-        bool shm_command_valid_{false};
-        uint32_t last_command_sequence_{0};
+    // Control flag
+        std::atomic<bool> running_{false};
 
-        std::vector<size_t> steer_joint_indices_;
-        std::vector<size_t> drive_joint_indices_;
+    // Thread functions
+        void HSH_HWI();
+        void HWI_HSH();
+        void CanInterface();
 
-        bool initialize_shared_memory();
-        void cleanup_shared_memory();
-        void start_command_thread();
-        void stop_command_thread();
-        void command_polling_loop();
-
-    
-        std::shared_ptr<OdriveMotor> make_motor_for_joint(const hardware_interface::ComponentInfo &joint);
-    SharedMemoryInterface shmitf_;
-    SharedMemorySegment   shmseg_{SHM_CMD, sizeof(ShmCommand)};
     };  
 
 

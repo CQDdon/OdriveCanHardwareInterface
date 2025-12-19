@@ -186,8 +186,8 @@ namespace odrive_can_interface
     running_ = true;
 
   // Start threads
-    hsh_to_hwi_thread_ = std::thread(&OdriveCANSystem::HSH_HWI, this);
-    hwi_to_hsh_thread_ = std::thread(&OdriveCANSystem::HWI_HSH, this);
+    can_receive_thread_ = std::thread(&OdriveCANSystem::CanReceive, this);
+    watch_dog_thread_ = std::thread(&OdriveCANSystem::WatchDog, this);
     can_interface_thread_ = std::thread(&OdriveCANSystem::CanInterface, this);
 
     // RCLCPP_INFO(logger_, "on_activate(): enabling drives...");
@@ -238,11 +238,11 @@ namespace odrive_can_interface
 
     running_ = false;
 
-    if (hsh_to_hwi_thread_.joinable())
-      hsh_to_hwi_thread_.join();
+    if (can_receive_thread_.joinable())
+      can_receive_thread_.join();
 
-    if (hwi_to_hsh_thread_.joinable())
-      hwi_to_hsh_thread_.join();
+    if (watch_dog_thread_.joinable())
+      watch_dog_thread_.join();
 
     if (can_interface_thread_.joinable())
       can_interface_thread_.join();
@@ -306,69 +306,73 @@ namespace odrive_can_interface
     return hardware_interface::return_type::OK;
   }
 
-  // ========== READ THREAD==========
-  void OdriveCANSystem::HSH_HWI()
+  // ========== CAN RECEIVE THREAD ==========
+  void OdriveCANSystem::CanReceive()
   {
-    RCLCPP_INFO(logger_, "HSH_HWI thread started");
+    RCLCPP_INFO(can_receive_logger_, "CAN RECEIVE thread started");
+    auto next_time = clock::now();
     while (running_)
     {
+      next_time += RX_FRE;
       if(auto *state_= shmitf_.state()){
         for( size_t i = 0; i < motors_.size(); ++i){
           state_->axes[i].position = static_cast<float>(2*3.141592)* static_cast<float>(motors_[i]->getPosition());  // Change from Round to Radian
           state_->axes[i].velocity = static_cast<float>(2*3.141592)* static_cast<float>(motors_[i]->getVelocity());  // RPS -> Rad/s
         }
       }else{
-        RCLCPP_ERROR(hsh_thread_logger_, "Failed to read state from shared memory");
+        RCLCPP_ERROR(can_receive_logger_, "Failed to read state from shared memory");
         fatal_error_ = true;
         running_ = false;   // stop all threads
         return;
       }
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      std::this_thread::sleep_until(next_time);
     }
-    RCLCPP_INFO(logger_, "HSH_HWI thread stopped");
+    RCLCPP_INFO(can_receive_logger_, "CAN RECEIVE thread stopped");
   }
-  // ========== WRITE THREAD==========
-  void OdriveCANSystem::HWI_HSH()
+  // ========== WATCH DOG THREAD==========
+  void OdriveCANSystem::WatchDog()
   {
-    RCLCPP_INFO(hwi_thread_logger_, "HWI_HSH thread started");
+    RCLCPP_INFO(watch_dog_logger_, "Watch Dog thread started");
+    auto next_time = clock::now();
     while (running_)
     {
-      ShmCommand cmd{};
-      for(size_t i = 0; i < motors_.size(); ++i){
-        if (joint_mode_[i] == OdriveMotor::VELOCITY){
-          cmd.wheel_velocity[i] = static_cast<float>(command_vel_[i]);
-        }else{
-          cmd.steer_angle[i] = static_cast<float>(command_pos_[i]);
-        }
-      if (!shmitf_.write_cmd(cmd)) {
-        RCLCPP_ERROR(hwi_thread_logger_, "Failed to write command to shared memory");
-        fatal_error_ = true;
-        running_ = false;   // stop all threads
-        return;
-      }
+    //   next_time += WATCH_DOG_FRE;
+    //   ShmCommand cmd{};
+    //   for(size_t i = 0; i < motors_.size(); ++i){
+    //     if (joint_mode_[i] == OdriveMotor::VELOCITY){
+    //       cmd.wheel_velocity[i] = static_cast<float>(command_vel_[i]);
+    //     }else{
+    //       cmd.steer_angle[i] = static_cast<float>(command_pos_[i]);
+    //     }
+    //   if (!shmitf_.write_cmd(cmd)) {
+    //     RCLCPP_ERROR(watch_dog_logger_, "Failed to write command to shared memory");
+    //     fatal_error_ = true;
+    //     running_ = false;   // stop all threads
+    //     return;
+    //   }
+    // }
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    RCLCPP_INFO(hwi_thread_logger_, "HWI_HSH thread stopped");
+    RCLCPP_INFO(watch_dog_logger_, " thread stopped");
   }
-  // ========== CAN THREAD==========
+  // ========== CAN TRANSMIT THREAD==========
   void OdriveCANSystem::CanInterface()
   {
-    RCLCPP_INFO(can_thread_logger_, "CAN interface thread started");
+    RCLCPP_INFO(can_transmit_logger_, "CAN Transmit thread started");
+    auto next_time = clock::now();
     while (running_)
     {
-
-      RCLCPP_INFO(can_thread_logger_, "on_configure(): opening CAN and instantiating motors...");
+      next_time += TX_FRE;
+      RCLCPP_INFO(can_transmit_logger_, "on_configure(): opening CAN and instantiating motors...");
 
       can_ = std::make_shared<CANInterface>();
       if (!can_->openInterface(can_port_))
       {
-        RCLCPP_ERROR(can_thread_logger_, "Failed to open CAN interface: %s", can_port_.c_str());
+        RCLCPP_ERROR(can_transmit_logger_, "Failed to open CAN interface: %s", can_port_.c_str());
         fatal_error_ = true;
         running_ = false;   // stop all threads
         return;
       }
-      RCLCPP_INFO(can_thread_logger_,
+      RCLCPP_INFO(can_transmit_logger_,
                   "CAN %s opened (requested baud %d). "
                   "NOTE: set bitrate via: sudo ip link set %s type can bitrate %d; sudo ip link set %s up",
                   can_port_.c_str(), baud_rate_, can_port_.c_str(), baud_rate_, can_port_.c_str());
@@ -386,7 +390,7 @@ namespace odrive_can_interface
       }
       catch (const std::exception &e)
       {
-        RCLCPP_ERROR(can_thread_logger_, "Invalid joint parameter (id): %s", e.what());
+        RCLCPP_ERROR(can_transmit_logger_, "Invalid joint parameter (id): %s", e.what());
         fatal_error_ = true;
         running_ = false;   // stop all threads
         return;
@@ -400,11 +404,12 @@ namespace odrive_can_interface
       } });
 
       can_->startReceive();
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      std::this_thread::sleep_until(next_time);
     }
 
-    RCLCPP_INFO(can_thread_logger_, "CAN interface thread stopped");
+    RCLCPP_INFO(can_transmit_logger_, "CAN Transmit thread stopped");
   }
+
 
 } // namespace odrive_can_interface
 

@@ -62,9 +62,9 @@ namespace odrive_can_interface
 
     private:
         rclcpp::Logger logger_{rclcpp::get_logger("OdriveCANSystem")};
-        rclcpp::Logger  can_thread_logger_{rclcpp::get_logger("Can Thread")};
-        rclcpp::Logger  hwi_thread_logger_{rclcpp::get_logger("HWI Thread")};
-        rclcpp::Logger  hsh_thread_logger_{rclcpp::get_logger("HSH Thread")};
+        rclcpp::Logger can_transmit_logger_{rclcpp::get_logger("Can Transmit")};
+        rclcpp::Logger can_receive_logger_{rclcpp::get_logger("Can Receive")};
+        rclcpp::Logger watch_dog_logger_{rclcpp::get_logger("Watch Dog")};
 
         // HW params (from URDF <hardware><param>)
         std::string can_port_{"can0"};
@@ -87,8 +87,8 @@ namespace odrive_can_interface
         SharedMemoryInterface shmitf_;
         SharedMemorySegment   shmseg_{SHM_CMD, sizeof(ShmCommand)};
     // Threads
-        std::thread hsh_to_hwi_thread_;
-        std::thread hwi_to_hsh_thread_;
+        std::thread can_receive_thread_;
+        std::thread watch_dog_thread_;
         std::thread can_interface_thread_;
 
     // Control flag
@@ -98,9 +98,14 @@ namespace odrive_can_interface
 
 
     // Thread functions
-        void HSH_HWI();
-        void HWI_HSH();
+        void CanReceive();
+        void WatchDog();
         void CanInterface();
+    // Frequency control
+        using clock = std::chrono::steady_clock;
+        static constexpr std::chrono::microseconds TX_FRE{5000}; // 200 Hz
+        static constexpr std::chrono::microseconds RX_FRE{5000}; // 200 Hz
+        static constexpr std::chrono::microseconds WATCH_DOG_FRE{100000}; // 10 Hz  
 
     };  
 

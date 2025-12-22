@@ -12,6 +12,13 @@ constexpr const char* SHM_CMD = "/hsh_to_hwi_cmd";
 constexpr const char* SHM_STATE = "/hwi_to_hsh_state";
 
 constexpr size_t SHM_MAX_AXES = 8 ;
+enum class AxisState : uint8_t
+{
+    Error = 0,
+    Idle = 1,
+    ClosedLoop = 2,
+    Calib = 3
+};
 
 struct AxisRawFeedback {
 
@@ -38,6 +45,7 @@ struct AxisRawFeedback {
 };
 
 struct SharedStateBlock {
+    AxisState axis_state;       
     uint32_t sequence_id;
     uint64_t timestamp_ns;
     uint8_t axis_count;

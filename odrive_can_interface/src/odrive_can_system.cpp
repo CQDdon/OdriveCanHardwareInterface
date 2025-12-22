@@ -164,6 +164,7 @@ namespace odrive_can_interface
     {
       const auto &joint = info_.joints[i];
       st.axes[i].can_id = static_cast<uint32_t>(std::stoi(joint.parameters.at("id")));
+      st.axis_state = AxisState::Error;  // state IDLE
     }
 
     if (!shmitf_.write_state(st)) {
@@ -209,8 +210,9 @@ namespace odrive_can_interface
 
       for(uint8_t i = 0; i < state_->axis_count ; ++i)
       {
-        RCLCPP_INFO(logger_, "Axis[%u] can_id=%u",
+        RCLCPP_INFO(logger_, "Axis[%u], state =%u, can_id=%u",
                     static_cast<unsigned>(i),
+                    state_->axes[i].state,
                     state_->axes[i].can_id);
       }
     }
@@ -336,74 +338,94 @@ namespace odrive_can_interface
     auto next_time = clock::now();
     while (running_)
     {
-    //   next_time += WATCH_DOG_FRE;
-    //   ShmCommand cmd{};
-    //   for(size_t i = 0; i < motors_.size(); ++i){
-    //     if (joint_mode_[i] == OdriveMotor::VELOCITY){
-    //       cmd.wheel_velocity[i] = static_cast<float>(command_vel_[i]);
-    //     }else{
-    //       cmd.steer_angle[i] = static_cast<float>(command_pos_[i]);
-    //     }
-    //   if (!shmitf_.write_cmd(cmd)) {
-    //     RCLCPP_ERROR(watch_dog_logger_, "Failed to write command to shared memory");
-    //     fatal_error_ = true;
-    //     running_ = false;   // stop all threads
-    //     return;
-    //   }
-    // }
-    }
+      next_time += WATCH_DOG_FRE;
+      auto *state_ = shmitf_.state();
+      if (!state_) 
+      {
+        RCLCPP_ERROR(watch_dog_logger_, "Failed to write state to shared memory");
+        fatal_error_ = true;
+        running_ = false;   // stop all threads
+        return;
+      }else{
+
+        // for(size_t i = 0; i < motors_.size(); ++i)
+        // {
+        //     state_->axes[i].error = static_cast<uint32_t>(motors_[i]->onCanFeedback(motors_[i]->getDeviceId()));
+        //     state_->axes[i].state = static_cast<uint32_t>(motors_[i]->onCanFeedback(motors_[i]->getDeviceId()));
+        //     state_->axes[i].last_hb_timestamp_ns = static_cast<uint32_t>(motors_[i]->onCanFeedback(motors_[i]->getDeviceId()));
+        // }
+
+      }
+      std::this_thread::sleep_until(next_time);
+  }
     RCLCPP_INFO(watch_dog_logger_, " thread stopped");
   }
   // ========== CAN TRANSMIT THREAD==========
   void OdriveCANSystem::CanInterface()
   {
     RCLCPP_INFO(can_transmit_logger_, "CAN Transmit thread started");
+    RCLCPP_INFO(can_transmit_logger_, "on_configure(): opening CAN and instantiating motors...");
+
+    can_ = std::make_shared<CANInterface>();
+    if (!can_->openInterface(can_port_))
+    {
+      RCLCPP_ERROR(can_transmit_logger_, "Failed to open CAN interface: %s", can_port_.c_str());
+      fatal_error_ = true;
+      running_ = false;   // stop all threads
+      return;
+    }
+    RCLCPP_INFO(can_transmit_logger_,
+                "CAN %s opened (requested baud %d). "
+                "NOTE: set bitrate via: sudo ip link set %s type can bitrate %d; sudo ip link set %s up",
+                can_port_.c_str(), baud_rate_, can_port_.c_str(), baud_rate_, can_port_.c_str());
+
+    motors_.clear();
+    motors_.reserve(info_.joints.size());
+    try
+    {
+      for (size_t i = 0; i < info_.joints.size(); ++i)
+      {
+        const auto &joint = info_.joints[i];
+        const uint8_t id = static_cast<uint8_t>(std::stoi(joint.parameters.at("id")));
+        motors_.emplace_back(std::make_shared<OdriveMotor>(id, joint_mode_[i], can_.get()));
+      }
+    }
+    catch (const std::exception &e)
+    {
+      RCLCPP_ERROR(can_transmit_logger_, "Invalid joint parameter (id): %s", e.what());
+      fatal_error_ = true;
+      running_ = false;   // stop all threads
+      return;
+    }
+
+    can_->registerFeedbackCallback([this](uint32_t can_id, const uint8_t *data, uint8_t dlc)
+                                  {
+    const uint32_t axis = (can_id >> 5);
+    for (auto &m : motors_) {
+      if (m->getDeviceId() == axis) { m->onCanFeedback(can_id, data, dlc); break; }
+    } });
+
+    can_->startReceive();
+
     auto next_time = clock::now();
     while (running_)
     {
       next_time += TX_FRE;
-      RCLCPP_INFO(can_transmit_logger_, "on_configure(): opening CAN and instantiating motors...");
-
-      can_ = std::make_shared<CANInterface>();
-      if (!can_->openInterface(can_port_))
+      if(shmitf_.ready())
       {
-        RCLCPP_ERROR(can_transmit_logger_, "Failed to open CAN interface: %s", can_port_.c_str());
-        fatal_error_ = true;
-        running_ = false;   // stop all threads
-        return;
-      }
-      RCLCPP_INFO(can_transmit_logger_,
-                  "CAN %s opened (requested baud %d). "
-                  "NOTE: set bitrate via: sudo ip link set %s type can bitrate %d; sudo ip link set %s up",
-                  can_port_.c_str(), baud_rate_, can_port_.c_str(), baud_rate_, can_port_.c_str());
-
-      motors_.clear();
-      motors_.reserve(info_.joints.size());
-      try
-      {
-        for (size_t i = 0; i < info_.joints.size(); ++i)
+        ShmCommand cmd{};
+        for (size_t i = 0; i < motors_.size(); ++i)
         {
-          const auto &joint = info_.joints[i];
-          const uint8_t id = static_cast<uint8_t>(std::stoi(joint.parameters.at("id")));
-          motors_.emplace_back(std::make_shared<OdriveMotor>(id, joint_mode_[i], can_.get()));
+          float val = 0.0f;
+          if (joint_mode_[i] == OdriveMotor::VELOCITY)
+            val = static_cast<float>(cmd.wheel_velocity[i]);
+          else
+            val = static_cast<float>(cmd.steer_angle[i]);
+
+          val = val / (2 * 3.141592);
+          (void)motors_[i]->setTarget(val);
         }
       }
-      catch (const std::exception &e)
-      {
-        RCLCPP_ERROR(can_transmit_logger_, "Invalid joint parameter (id): %s", e.what());
-        fatal_error_ = true;
-        running_ = false;   // stop all threads
-        return;
-      }
-
-      can_->registerFeedbackCallback([this](uint32_t can_id, const uint8_t *data, uint8_t dlc)
-                                    {
-      const uint32_t axis = (can_id >> 5);
-      for (auto &m : motors_) {
-        if (m->getDeviceId() == axis) { m->onCanFeedback(can_id, data, dlc); break; }
-      } });
-
-      can_->startReceive();
       std::this_thread::sleep_until(next_time);
     }
 

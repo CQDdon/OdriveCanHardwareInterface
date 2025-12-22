@@ -1,7 +1,5 @@
 #include "odrive_can_interface/odrive_can_system.hpp"
 
-
-
 namespace odrive_can_interface
 {
 
@@ -164,7 +162,7 @@ namespace odrive_can_interface
     {
       const auto &joint = info_.joints[i];
       st.axes[i].can_id = static_cast<uint32_t>(std::stoi(joint.parameters.at("id")));
-      st.axis_state = AxisState::Error;  // state IDLE
+      st.axis_state = AxisState::Idle;  // state IDLE
     }
 
     if (!shmitf_.write_state(st)) {

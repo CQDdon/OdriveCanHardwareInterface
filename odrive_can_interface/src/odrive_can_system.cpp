@@ -8,24 +8,13 @@ namespace odrive_can_interface
       const hardware_interface::HardwareInfo &info)
   {
     // ------INITIALIZE SHM ------
-    RCLCPP_INFO(logger_,"Creating shared memory");
-    if(!shmseg_.open(true)){
-      RCLCPP_ERROR(logger_, "Could not create shm");
-      return hardware_interface::CallbackReturn::ERROR;
-    }else{
-      RCLCPP_INFO(logger_, " SHM created sucessfully"); 
-    }
-    // reading shm
-    // if (auto *cmd = shmseg_.as<ShmCommand>()) {
-    // RCLCPP_INFO(logger_, "SHM command seq=%u axis_count=%u", cmd->sequence_id, cmd->axis_count);
-    // }
-    if(!shmitf_.open()){
+    RCLCPP_INFO(logger_, "Creating shared memory");
+    if (!shmitf_.open())
+    {
       RCLCPP_ERROR(logger_, "Could not create shm interface");
       return hardware_interface::CallbackReturn::ERROR;
-    }else{
-      RCLCPP_INFO(logger_, " SHM interface created sucessfully"); 
-
     }
+    RCLCPP_INFO(logger_, "SHM interface created successfully");
     // ------INITIALIZE HWI ------
     if (hardware_interface::SystemInterface::on_init(info) !=
         hardware_interface::CallbackReturn::SUCCESS)
@@ -154,20 +143,22 @@ namespace odrive_can_interface
   hardware_interface::CallbackReturn OdriveCANSystem::on_configure(
       const rclcpp_lifecycle::State &)
   {
-    // ShmCommand cmd{};
-    ShmState st{};
+    HwiStateBlock st{};
     st.axis_count = static_cast<uint8_t>(std::min(info_.joints.size(), static_cast<size_t>(SHM_MAX_AXES)));
+    st.system_state = SystemState::Idle;
 
     for (size_t i = 0; i < info_.joints.size(); ++i)
     {
       const auto &joint = info_.joints[i];
       st.axes[i].can_id = static_cast<uint32_t>(std::stoi(joint.parameters.at("id")));
-      st.axis_state = AxisState::Idle;  // state IDLE
     }
 
-    if (!shmitf_.write_state(st)) {
+    if (!shmitf_.write_state(st))
+    {
       RCLCPP_WARN(logger_, "Failed to write initial state to shared memory");
-    } else {
+    }
+    else
+    {
       RCLCPP_INFO(logger_, "Axis count advertised via SHM: %u", st.axis_count);
     }
 
@@ -178,13 +169,14 @@ namespace odrive_can_interface
   hardware_interface::CallbackReturn OdriveCANSystem::on_activate(
       const rclcpp_lifecycle::State &)
   {
-    if(!shmitf_.ready()&& shmseg_.is_open()){
+    if (!shmitf_.ready())
+    {
       return hardware_interface::CallbackReturn::ERROR;
     }
 
     running_ = true;
 
-  // Start threads
+    // Start threads
     can_receive_thread_ = std::thread(&OdriveCANSystem::CanReceive, this);
     watch_dog_thread_ = std::thread(&OdriveCANSystem::WatchDog, this);
     can_interface_thread_ = std::thread(&OdriveCANSystem::CanInterface, this);
@@ -199,30 +191,28 @@ namespace odrive_can_interface
     // for (auto &m : motors_)
     //   m->closeLoopControl();
 
-    
-    if(auto *state_= shmitf_.state())
+    if (auto *state_ = shmitf_.state())
     {
-      RCLCPP_INFO(logger_, "Sequence : %u, Axis count : %u", 
-                  state_->sequence_id, 
+      RCLCPP_INFO(logger_, "Sequence : %u, Axis count : %u",
+                  state_->sequence_id,
                   state_->axis_count);
 
-      for(uint8_t i = 0; i < state_->axis_count ; ++i)
+      for (uint8_t i = 0; i < state_->axis_count; ++i)
       {
         RCLCPP_INFO(logger_, "Axis[%u], state =%u, can_id=%u",
                     static_cast<unsigned>(i),
-                    state_->axes[i].state,
+                    state_->axes[i].odrive_state,
                     state_->axes[i].can_id);
       }
     }
     if (fatal_error_)
     {
       RCLCPP_ERROR(logger_, "Hardware fatal error: %s",
-                  last_error_.c_str());
+                   last_error_.c_str());
       return hardware_interface::CallbackReturn::ERROR;
     }
     return hardware_interface::CallbackReturn::SUCCESS;
   }
-
 
   // ========== DEACTIVATE ==========
   hardware_interface::CallbackReturn OdriveCANSystem::on_deactivate(
@@ -234,7 +224,7 @@ namespace odrive_can_interface
     //   m->setTarget(0.0f);
     //   m->idle();
     // }
-    RCLCPP_INFO(logger_,"Deactivating hardware interface...");
+    RCLCPP_INFO(logger_, "Deactivating hardware interface...");
 
     running_ = false;
 
@@ -280,29 +270,53 @@ namespace odrive_can_interface
   hardware_interface::return_type OdriveCANSystem::read(
       const rclcpp::Time &, const rclcpp::Duration &)
   {
-    // for (size_t i = 0; i < motors_.size(); ++i)
-    // {
-    //   position_[i] = /*static_cast<double>(2*3.141592)**/ static_cast<double>(motors_[i]->getPosition());
-    //   velocity_[i] = /*static_cast<double>(2*3.141592)**/ static_cast<double>(motors_[i]->getVelocity());
-    // }
+    for (size_t i = 0; i < motors_.size(); ++i)
+    {
+      position_[i] = static_cast<double>(2 * 3.141592) *
+                     static_cast<double>(motors_[i]->getPosition());
+      velocity_[i] = static_cast<double>(2 * 3.141592) *
+                     static_cast<double>(motors_[i]->getVelocity());
+    }
     return hardware_interface::return_type::OK;
   }
 
   // ========== WRITE LOOP ==========
   hardware_interface::return_type
-  OdriveCANSystem::write(const rclcpp::Time &, const rclcpp::Duration &)
+  OdriveCANSystem::write(const rclcpp::Time &time, const rclcpp::Duration &)
   {
-    // for (size_t i = 0; i < motors_.size(); ++i)
-    // {
-    //   float val = 0.0f;
-    //   if (joint_mode_[i] == OdriveMotor::VELOCITY)
-    //     val = static_cast<float>(command_vel_[i]);
-    //   else
-    //     val = static_cast<float>(command_pos_[i]);
+    auto *cmd_if = shmitf_.cmd_if();
+    if (!cmd_if)
+    {
+      return hardware_interface::return_type::OK;
+    }
 
-    //   val = val / (2 * 3.141592);
-    //   (void)motors_[i]->setTarget(val);
-    // }
+    HwiCommandIfBlock out = *cmd_if;
+    out.axis_count = static_cast<uint8_t>(
+        std::min(info_.joints.size(), static_cast<size_t>(SHM_MAX_AXES)));
+    out.timestamp_ns = static_cast<uint64_t>(time.nanoseconds());
+    out.sequence_id += 1;
+
+    for (size_t i = 0; i < SHM_MAX_AXES; ++i)
+    {
+      out.axes[i].interface = CommandInterface::None;
+      out.axes[i].value = 0.0f;
+    }
+
+    for (size_t i = 0; i < out.axis_count; ++i)
+    {
+      if (joint_mode_[i] == OdriveMotor::VELOCITY)
+      {
+        out.axes[i].interface = CommandInterface::Velocity;
+        out.axes[i].value = static_cast<float>(command_vel_[i]);
+      }
+      else
+      {
+        out.axes[i].interface = CommandInterface::Position;
+        out.axes[i].value = static_cast<float>(command_pos_[i]);
+      }
+    }
+
+    (void)shmitf_.write_cmd_if(out);
     return hardware_interface::return_type::OK;
   }
 
@@ -314,21 +328,36 @@ namespace odrive_can_interface
     while (running_)
     {
       next_time += RX_FRE;
-      if(auto *state_= shmitf_.state()){
-        for( size_t i = 0; i < motors_.size(); ++i){
-          state_->axes[i].position = static_cast<float>(2*3.141592)* static_cast<float>(motors_[i]->getPosition());  // Change from Round to Radian
-          state_->axes[i].velocity = static_cast<float>(2*3.141592)* static_cast<float>(motors_[i]->getVelocity());  // RPS -> Rad/s
+      if (auto *state_ = shmitf_.state())
+      {
+        const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                clock::now().time_since_epoch())
+                                .count();
+        state_->timestamp_ns = static_cast<uint64_t>(now_ns);
+        state_->sequence_id += 1;
+        state_->axis_count = static_cast<uint8_t>(
+            std::min(motors_.size(), static_cast<size_t>(SHM_MAX_AXES)));
+
+        for (size_t i = 0; i < state_->axis_count; ++i)
+        {
+          state_->axes[i].position = static_cast<float>(2 * 3.141592) *
+                                     static_cast<float>(motors_[i]->getPosition());
+          state_->axes[i].velocity = static_cast<float>(2 * 3.141592) *
+                                     static_cast<float>(motors_[i]->getVelocity());
         }
-      }else{
+      }
+      else
+      {
         RCLCPP_ERROR(can_receive_logger_, "Failed to read state from shared memory");
         fatal_error_ = true;
-        running_ = false;   // stop all threads
+        running_ = false; // stop all threads
         return;
       }
       std::this_thread::sleep_until(next_time);
     }
     RCLCPP_INFO(can_receive_logger_, "CAN RECEIVE thread stopped");
   }
+
   // ========== WATCH DOG THREAD==========
   void OdriveCANSystem::WatchDog()
   {
@@ -338,13 +367,15 @@ namespace odrive_can_interface
     {
       next_time += WATCH_DOG_FRE;
       auto *state_ = shmitf_.state();
-      if (!state_) 
+      if (!state_)
       {
         RCLCPP_ERROR(watch_dog_logger_, "Failed to write state to shared memory");
         fatal_error_ = true;
-        running_ = false;   // stop all threads
+        running_ = false; // stop all threads
         return;
-      }else{
+      }
+      else
+      {
 
         // for(size_t i = 0; i < motors_.size(); ++i)
         // {
@@ -352,10 +383,9 @@ namespace odrive_can_interface
         //     state_->axes[i].state = static_cast<uint32_t>(motors_[i]->onCanFeedback(motors_[i]->getDeviceId()));
         //     state_->axes[i].last_hb_timestamp_ns = static_cast<uint32_t>(motors_[i]->onCanFeedback(motors_[i]->getDeviceId()));
         // }
-
       }
       std::this_thread::sleep_until(next_time);
-  }
+    }
     RCLCPP_INFO(watch_dog_logger_, " thread stopped");
   }
   // ========== CAN TRANSMIT THREAD==========
@@ -369,7 +399,7 @@ namespace odrive_can_interface
     {
       RCLCPP_ERROR(can_transmit_logger_, "Failed to open CAN interface: %s", can_port_.c_str());
       fatal_error_ = true;
-      running_ = false;   // stop all threads
+      running_ = false; // stop all threads
       return;
     }
     RCLCPP_INFO(can_transmit_logger_,
@@ -392,12 +422,12 @@ namespace odrive_can_interface
     {
       RCLCPP_ERROR(can_transmit_logger_, "Invalid joint parameter (id): %s", e.what());
       fatal_error_ = true;
-      running_ = false;   // stop all threads
+      running_ = false; // stop all threads
       return;
     }
 
     can_->registerFeedbackCallback([this](uint32_t can_id, const uint8_t *data, uint8_t dlc)
-                                  {
+                                   {
     const uint32_t axis = (can_id >> 5);
     for (auto &m : motors_) {
       if (m->getDeviceId() == axis) { m->onCanFeedback(can_id, data, dlc); break; }
@@ -409,19 +439,51 @@ namespace odrive_can_interface
     while (running_)
     {
       next_time += TX_FRE;
-      if(shmitf_.ready())
+      if (shmitf_.ready())
       {
-        ShmCommand cmd{};
-        for (size_t i = 0; i < motors_.size(); ++i)
+        const auto *ctrl_ptr = shmitf_.control();
+        if (!ctrl_ptr)
         {
-          float val = 0.0f;
-          if (joint_mode_[i] == OdriveMotor::VELOCITY)
-            val = static_cast<float>(cmd.wheel_velocity[i]);
-          else
-            val = static_cast<float>(cmd.steer_angle[i]);
+          std::this_thread::sleep_until(next_time);
+          continue;
+        }
 
-          val = val / (2 * 3.141592);
-          (void)motors_[i]->setTarget(val);
+        const HshControlBlock ctrl = *ctrl_ptr;
+        const size_t axis_count = std::min(
+            static_cast<size_t>(ctrl.axis_count), motors_.size());
+
+        for (size_t i = 0; i < axis_count; ++i)
+        {
+          switch (ctrl.axes[i].action)
+          {
+          case ControlAction::Idle:
+            (void)motors_[i]->idle();
+            break;
+          case ControlAction::ClosedLoop:
+            (void)motors_[i]->closeLoopControl();
+            break;
+          case ControlAction::FullCalib:
+            (void)motors_[i]->fullCalibration();
+            break;
+          case ControlAction::Homing:
+            (void)motors_[i]->setHoming();
+            break;
+          case ControlAction::ClearErrors:
+            (void)motors_[i]->clearErrors();
+            break;
+          case ControlAction::None:
+          default:
+            break;
+          }
+
+          if (ctrl.motion_enable &&
+              (ctrl.axes[i].action == ControlAction::None ||
+               ctrl.axes[i].action == ControlAction::ClosedLoop))
+          {
+            float val = static_cast<float>(ctrl.axes[i].target);
+            val = val / (2 * 3.141592);
+            (void)motors_[i]->setTarget(val);
+          }
         }
       }
       std::this_thread::sleep_until(next_time);
@@ -430,10 +492,7 @@ namespace odrive_can_interface
     RCLCPP_INFO(can_transmit_logger_, "CAN Transmit thread stopped");
   }
 
-
 } // namespace odrive_can_interface
-
-
 
 #include "pluginlib/class_list_macros.hpp"
 PLUGINLIB_EXPORT_CLASS(odrive_can_interface::OdriveCANSystem,

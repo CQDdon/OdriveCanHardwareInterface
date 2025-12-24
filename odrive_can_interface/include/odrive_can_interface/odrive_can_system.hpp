@@ -85,7 +85,6 @@ namespace odrive_can_interface
 
     // Shared memory 
         SharedMemoryInterface shmitf_;
-        SharedMemorySegment   shmseg_{SHM_CMD, sizeof(ShmCommand)};
     // Threads
         std::thread can_receive_thread_;
         std::thread watch_dog_thread_;
@@ -111,5 +110,4 @@ namespace odrive_can_interface
 
 
 } // namespace odrive_can_interface
-
 

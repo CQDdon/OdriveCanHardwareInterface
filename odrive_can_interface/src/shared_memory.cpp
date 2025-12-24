@@ -4,6 +4,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <cstring>
 #include <utility>
 #include <cstdio>
@@ -112,43 +113,54 @@ SharedMemoryInterface::~SharedMemoryInterface()
 
 bool SharedMemoryInterface::open()
 {
-	if (!command_segment_.open())
+	if (!cmd_if_segment_.open())
 	{
 		return false;
 	}
 
 	if (!state_segment_.open())
 	{
-		command_segment_.close();
+		cmd_if_segment_.close();
 		return false;
 	}
 
-	if (auto *cmd = command())
+	if (!control_segment_.open())
 	{
-		std::memset(cmd, 0, sizeof(ShmCommand));
+		cmd_if_segment_.close();
+		state_segment_.close();
+		return false;
+	}
+
+	if (auto *cmd = cmd_if())
+	{
+		std::memset(cmd, 0, sizeof(HwiCommandIfBlock));
 	}
 	if (auto *st = state())
 	{
-		std::memset(st, 0, sizeof(ShmState));
+		std::memset(st, 0, sizeof(HwiStateBlock));
+	}
+	if (auto *ctrl = control())
+	{
+		std::memset(ctrl, 0, sizeof(HshControlBlock));
 	}
 	return true;
 }
 
-bool SharedMemoryInterface::write_state(const ShmState &state_data)
+bool SharedMemoryInterface::write_state(const HwiStateBlock &state_data)
 {
 	if (!ready())
 	{
 		return false;
 	}
 
-	ShmState *st = state();
+	HwiStateBlock *st = state();
 	if (!st)
 	{
 		return false;
 	}
 
-	std::memcpy(st, &state_data, sizeof(ShmState));
-	if (msync(st, sizeof(ShmState), MS_SYNC) != 0)
+	std::memcpy(st, &state_data, sizeof(HwiStateBlock));
+	if (msync(st, sizeof(HwiStateBlock), MS_SYNC) != 0)
 	{
 		std::fprintf(stderr, "ERROR: failed to msync state segment, errno=%s\n", std::strerror(errno));
 		return false;
@@ -157,23 +169,46 @@ bool SharedMemoryInterface::write_state(const ShmState &state_data)
 	return true;
 }
 
-bool SharedMemoryInterface::write_cmd(const ShmCommand &command_data)
+bool SharedMemoryInterface::write_cmd_if(const HwiCommandIfBlock &command_if_data)
 {
 	if (!ready())
 	{
 		return false;
 	}
 
-	ShmCommand *cmd = command();
+	HwiCommandIfBlock *cmd = cmd_if();
 	if (!cmd)
 	{
 		return false;
 	}
 
-	std::memcpy(cmd, &command_data, sizeof(ShmCommand));
-	if (msync(cmd, sizeof(ShmCommand), MS_SYNC) != 0)
+	std::memcpy(cmd, &command_if_data, sizeof(HwiCommandIfBlock));
+	if (msync(cmd, sizeof(HwiCommandIfBlock), MS_SYNC) != 0)
 	{
-		std::fprintf(stderr, "ERROR: failed to msync command segment, errno=%s\n", std::strerror(errno));
+		std::fprintf(stderr, "ERROR: failed to msync cmd_if segment, errno=%s\n", std::strerror(errno));
+		return false;
+	}
+
+	return true;
+}
+
+bool SharedMemoryInterface::write_control(const HshControlBlock &control_data)
+{
+	if (!ready())
+	{
+		return false;
+	}
+
+	HshControlBlock *ctrl = control();
+	if (!ctrl)
+	{
+		return false;
+	}
+
+	std::memcpy(ctrl, &control_data, sizeof(HshControlBlock));
+	if (msync(ctrl, sizeof(HshControlBlock), MS_SYNC) != 0)
+	{
+		std::fprintf(stderr, "ERROR: failed to msync control segment, errno=%s\n", std::strerror(errno));
 		return false;
 	}
 
@@ -182,34 +217,44 @@ bool SharedMemoryInterface::write_cmd(const ShmCommand &command_data)
 
 void SharedMemoryInterface::close()
 {
-	command_segment_.close();
+	cmd_if_segment_.close();
 	state_segment_.close();
+	control_segment_.close();
 }
 
 bool SharedMemoryInterface::ready() const noexcept
 {
-	return command_segment_.is_open() && state_segment_.is_open();
+	return cmd_if_segment_.is_open() && state_segment_.is_open() && control_segment_.is_open();
 }
 
-ShmCommand *SharedMemoryInterface::command() noexcept
+HwiCommandIfBlock *SharedMemoryInterface::cmd_if() noexcept
 {
-	return command_segment_.as<ShmCommand>();
+	return cmd_if_segment_.as<HwiCommandIfBlock>();
 }
 
-const ShmCommand *SharedMemoryInterface::command() const noexcept
+const HwiCommandIfBlock *SharedMemoryInterface::cmd_if() const noexcept
 {
-	return command_segment_.as<const ShmCommand>();
+	return cmd_if_segment_.as<const HwiCommandIfBlock>();
 }
 
-ShmState *SharedMemoryInterface::state() noexcept
+HwiStateBlock *SharedMemoryInterface::state() noexcept
 {
-	return state_segment_.as<ShmState>();
+	return state_segment_.as<HwiStateBlock>();
 }
 
-const ShmState *SharedMemoryInterface::state() const noexcept
+const HwiStateBlock *SharedMemoryInterface::state() const noexcept
 {
-	return state_segment_.as<const ShmState>();
+	return state_segment_.as<const HwiStateBlock>();
+}
+
+HshControlBlock *SharedMemoryInterface::control() noexcept
+{
+	return control_segment_.as<HshControlBlock>();
+}
+
+const HshControlBlock *SharedMemoryInterface::control() const noexcept
+{
+	return control_segment_.as<const HshControlBlock>();
 }
 
 } // namespace odrive_can_interface
-

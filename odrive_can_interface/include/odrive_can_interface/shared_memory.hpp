@@ -3,15 +3,17 @@
 
 #pragma once
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <string>
-#include <errno.h>
 
-constexpr const char* SHM_CMD = "/hsh_to_hwi_cmd";
-constexpr const char* SHM_STATE = "/hwi_to_hsh_state";
+// Shared memory names.
+constexpr const char *SHM_CMD = "/hsh_to_hwi_cmd";
+constexpr const char *SHM_STATE = "/hwi_to_hsh_state";
 
-constexpr size_t SHM_MAX_AXES = 8 ;
+constexpr size_t SHM_MAX_AXES = 8;
+
+// Axis state for higher-level coordination.
 enum class AxisState : uint8_t
 {
     Error = 0,
@@ -20,22 +22,22 @@ enum class AxisState : uint8_t
     Calib = 3
 };
 
-struct AxisRawFeedback {
-
+struct AxisRawFeedback
+{
     uint32_t can_id;
     uint8_t  online;
     uint8_t  reserved_u8_0;
     uint16_t reserved_u16_0;
-    uint32_t error; // error code (bitmask từ ODrive)
-    uint32_t state; // Odrive state (IDLE, CLOSED_LOOP,...)
-    uint32_t controller_status_raw; // optional, tùy bạn map
+    uint32_t error;                 // ODrive error (bitmask)
+    uint32_t state;                 // ODrive state (IDLE, CLOSED_LOOP, ...)
+    uint32_t controller_status_raw; // Optional, map as needed
     
-    // Dữ liệu động học đã decode
-    float position;            // rad hoặc deg (bạn thống nhất)
-    float velocity;            // rad/s hoặc m/s
+    // Decoded kinematics.
+    float position;            // rad or deg (decide one)
+    float velocity;            // rad/s or m/s
 
-    // Thời gian
-    uint64_t last_hb_timestamp_ns;  // thời điểm nhận heartbeat gần nhất
+    // Timing.
+    uint64_t last_hb_timestamp_ns;  // last heartbeat timestamp
 
     AxisRawFeedback()
         : can_id(0), online(0), reserved_u8_0(0), reserved_u16_0(0),
@@ -44,7 +46,8 @@ struct AxisRawFeedback {
     {}
 };
 
-struct SharedStateBlock {
+struct SharedStateBlock
+{
     AxisState axis_state;       
     uint32_t sequence_id;
     uint64_t timestamp_ns;
@@ -54,7 +57,8 @@ struct SharedStateBlock {
     AxisRawFeedback axes[SHM_MAX_AXES];
 
     SharedStateBlock()
-        : sequence_id(0), timestamp_ns(0), axis_count(0), reserved_u8_1(0), reserved_u16_1(0)
+        : sequence_id(0), timestamp_ns(0), axis_count(0),
+          reserved_u8_1(0), reserved_u16_1(0)
     {
         for (auto &axis : axes)
         {
@@ -63,19 +67,20 @@ struct SharedStateBlock {
     }
 };
 
-struct ControlCommand { 
-    uint32_t sequence_id;       // tăng khi SH gửi lệnh mới 
-    uint64_t timestamp_ns; 
-    uint8_t axis_count; 
+struct ControlCommand
+{
+    uint32_t sequence_id;       // increments when SH sends a new command
+    uint64_t timestamp_ns;
+    uint8_t axis_count;
 
-    bool enable;                // motion_allowed 
-    uint8_t control_mode;       // IDLE, CLOSED_LOOP, HOMING, ... 
+    bool enable;                // motion_allowed
+    uint8_t control_mode;       // IDLE, CLOSED_LOOP, HOMING, ...
 
-    float wheel_velocity[SHM_MAX_AXES];   // drive setpoint 
-    float steer_angle[SHM_MAX_AXES];      // steer setpoint 
+    float wheel_velocity[SHM_MAX_AXES];   // drive setpoint
+    float steer_angle[SHM_MAX_AXES];      // steer setpoint
  
-    uint8_t safety_action;      // 0=normal, 1=soft-stop, 2=emergency 
-}; 
+    uint8_t safety_action;      // 0=normal, 1=soft-stop, 2=emergency
+};
 
 // Type aliases for backward compatibility
 using ShmCommand = ControlCommand;

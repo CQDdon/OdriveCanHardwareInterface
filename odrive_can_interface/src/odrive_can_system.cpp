@@ -438,4 +438,3 @@ namespace odrive_can_interface
 #include "pluginlib/class_list_macros.hpp"
 PLUGINLIB_EXPORT_CLASS(odrive_can_interface::OdriveCANSystem,
                        hardware_interface::SystemInterface)
-

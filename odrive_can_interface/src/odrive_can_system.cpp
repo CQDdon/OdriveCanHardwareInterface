@@ -182,11 +182,6 @@ namespace odrive_can_interface
 
     running_ = true;
 
-    // Start threads
-    can_receive_thread_ = std::thread(&OdriveCANSystem::CanReceive, this);
-    watch_dog_thread_ = std::thread(&OdriveCANSystem::WatchDog, this);
-    can_interface_thread_ = std::thread(&OdriveCANSystem::CanInterface, this);
-
     if (auto *state_ = shmitf_.state())
     {
       RCLCPP_INFO(logger_, "Sequence : %u, Axis count : %u",
@@ -195,7 +190,7 @@ namespace odrive_can_interface
 
       for (size_t i = 0; i < state_->axis_count; ++i)
       {
-        RCLCPP_INFO(logger_, "Axis[%u], state =%u, can_id=%u",
+        RCLCPP_INFO(logger_, "Axis[%u], state = %u, can_id = %u",
                     static_cast<unsigned>(i),
                     state_->axes[i].odrive_state,
                     state_->axes[i].can_id);
@@ -218,6 +213,14 @@ namespace odrive_can_interface
                    last_error_.c_str());
       return hardware_interface::CallbackReturn::ERROR;
     }
+
+    // Start threads
+    can_receive_thread_ = std::thread(&OdriveCANSystem::CanReceive, this);
+    watch_dog_thread_ = std::thread(&OdriveCANSystem::WatchDog, this);
+    can_interface_thread_ = std::thread(&OdriveCANSystem::CanInterface, this);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));        // Wait for all threads to start
+
     return hardware_interface::CallbackReturn::SUCCESS;
   }
 
@@ -362,6 +365,7 @@ namespace odrive_can_interface
       uint32_t sys_err = 0;
       for (size_t i = 0; i < state_->axis_count; ++i)
       {
+        state_->axes[i].odrive_state = motors_[i]->getAxisState();
         state_->axes[i].error = 0;
         state_->axes[i].error |= (motors_[i]->getAxisError() & 0xFF) << 0;
         state_->axes[i].error |= (motors_[i]->getMotorError() & 0xFF) << 8;

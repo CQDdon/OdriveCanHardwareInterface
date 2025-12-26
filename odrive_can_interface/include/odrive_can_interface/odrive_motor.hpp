@@ -47,9 +47,12 @@ public:
 
     // Get latest error status
     uint32_t getAxisError() const;
+    uint32_t getAxisState() const;
     uint64_t getMotorError() const;
     uint32_t getEncoderError() const;
     uint32_t getControllerError() const;
+    bool getTrajectoryStatus();
+
 
 private:
     // CAN Command IDs
@@ -152,10 +155,11 @@ private:
     // Error status storage
     uint32_t axis_error_{0};
     uint32_t axis_state_{0};
-    uint32_t controller_flags_{0};
     uint64_t motor_error_{0};
     uint32_t encoder_error_{0};
     uint32_t controller_error_{0};
+    bool traj_done_{false};
+
 };
 
 #endif // ODRIVE_MOTOR_HPP_

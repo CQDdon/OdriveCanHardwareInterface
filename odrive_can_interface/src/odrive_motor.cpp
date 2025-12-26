@@ -148,22 +148,24 @@ void OdriveMotor::onCanFeedback(uint32_t frame_id, const uint8_t *data, uint8_t 
     case CMD_HEARTBEAT:
         if (dlc >= 8)
         {
-            uint32_t axis_error = 0, axis_state = 0, controller_flags = 0;
+            uint32_t axis_error = 0, axis_state = 0;
+            bool motor_error = false, encoder_error = false, controller_error = false, traj_done = false;
             std::memcpy(&axis_error, data + 0, 4);
             axis_state = data[4];
-            controller_flags = data[7];
+            motor_error = (data[5] >> 0) & 0x01;
+            encoder_error = (data[6] >> 0) & 0x01;
+            controller_error = (data[7] >> 0) & 0x01;
+            traj_done = (data[7] >> 7) & 0x01;
+
 
             {
                 std::lock_guard<std::mutex> lk(mtx_);
                 axis_error_ = axis_error;
                 axis_state_ = axis_state;
-                controller_flags_ = controller_flags;
-            }
-
-            // Call virtual callback if error detected
-            if (axis_error != 0)
-            {
-                onHeartbeatError(axis_error, axis_state, controller_flags);
+                motor_error_= motor_error;
+                encoder_error_ = encoder_error;
+                controller_error_ = controller_error;
+                traj_done_ = traj_done;
             }
         }
         break;
@@ -178,12 +180,6 @@ void OdriveMotor::onCanFeedback(uint32_t frame_id, const uint8_t *data, uint8_t 
                 std::lock_guard<std::mutex> lk(mtx_);
                 motor_error_ = motor_error;
             }
-
-            // Call virtual callback if error detected
-            if (motor_error != 0)
-            {
-                onMotorError(motor_error);
-            }
         }
         break;
 
@@ -197,12 +193,6 @@ void OdriveMotor::onCanFeedback(uint32_t frame_id, const uint8_t *data, uint8_t 
                 std::lock_guard<std::mutex> lk(mtx_);
                 encoder_error_ = encoder_error;
             }
-
-            // Call virtual callback if error detected
-            if (encoder_error != 0)
-            {
-                onEncoderError(encoder_error);
-            }
         }
         break;
 
@@ -215,12 +205,6 @@ void OdriveMotor::onCanFeedback(uint32_t frame_id, const uint8_t *data, uint8_t 
             {
                 std::lock_guard<std::mutex> lk(mtx_);
                 controller_error_ = controller_error;
-            }
-
-            // Call virtual callback if error detected
-            if (controller_error != 0)
-            {
-                onControllerError(controller_error);
             }
         }
         break;
@@ -259,6 +243,12 @@ uint32_t OdriveMotor::getAxisError() const
     return axis_error_;
 }
 
+uint32_t OdriveMotor::getAxisState() const
+{
+    std::lock_guard<std::mutex> lk(mtx_);
+    return axis_state_;
+}
+
 uint64_t OdriveMotor::getMotorError() const
 {
     std::lock_guard<std::mutex> lk(mtx_);
@@ -275,4 +265,10 @@ uint32_t OdriveMotor::getControllerError() const
 {
     std::lock_guard<std::mutex> lk(mtx_);
     return controller_error_;
+}
+
+bool OdriveMotor::getTrajectoryStatus()
+{
+    std::lock_guard<std::mutex> lk(mtx_);
+    return traj_done_;
 }

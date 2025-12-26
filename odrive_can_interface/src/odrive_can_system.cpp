@@ -145,7 +145,7 @@ namespace odrive_can_interface
   {
     HwiStateBlock st{};
     st.axis_count = static_cast<uint8_t>(std::min(info_.joints.size(), static_cast<size_t>(SHM_MAX_AXES)));
-    st.system_state = SystemState::Idle;
+    st.system_state = SystemState::OnConfigure;
 
     for (size_t i = 0; i < info_.joints.size(); ++i)
     {
@@ -174,6 +174,12 @@ namespace odrive_can_interface
       return hardware_interface::CallbackReturn::ERROR;
     }
 
+    auto *cmd_if = shmitf_.cmd_if();
+    if (!cmd_if)
+    {
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+
     running_ = true;
 
     // Start threads
@@ -181,23 +187,13 @@ namespace odrive_can_interface
     watch_dog_thread_ = std::thread(&OdriveCANSystem::WatchDog, this);
     can_interface_thread_ = std::thread(&OdriveCANSystem::CanInterface, this);
 
-    // RCLCPP_INFO(logger_, "on_activate(): enabling drives...");
-    // for (auto &m : motors_)
-    //   m->clearErrors();
-    // for (auto &m : motors_)
-    //   m->setTarget(0.0f);
-    // //Enable closed loop control
-    // RCLCPP_INFO(logger_, "Enabling closed loop control...");
-    // for (auto &m : motors_)
-    //   m->closeLoopControl();
-
     if (auto *state_ = shmitf_.state())
     {
       RCLCPP_INFO(logger_, "Sequence : %u, Axis count : %u",
                   state_->sequence_id,
                   state_->axis_count);
 
-      for (uint8_t i = 0; i < state_->axis_count; ++i)
+      for (size_t i = 0; i < state_->axis_count; ++i)
       {
         RCLCPP_INFO(logger_, "Axis[%u], state =%u, can_id=%u",
                     static_cast<unsigned>(i),
@@ -205,6 +201,17 @@ namespace odrive_can_interface
                     state_->axes[i].can_id);
       }
     }
+
+    HwiCommandIfBlock out = *cmd_if;
+
+    for (size_t i = 0; i < SHM_MAX_AXES; ++i)
+    {
+      out.axes[i].interface = CommandInterface::None;
+      out.axes[i].value = 0.0f;
+    }
+
+    (void)shmitf_.write_cmd_if(out);
+
     if (fatal_error_)
     {
       RCLCPP_ERROR(logger_, "Hardware fatal error: %s",
@@ -218,12 +225,6 @@ namespace odrive_can_interface
   hardware_interface::CallbackReturn OdriveCANSystem::on_deactivate(
       const rclcpp_lifecycle::State &)
   {
-    // RCLCPP_INFO(logger_, "on_deactivate(): disabling drives...");
-    // for (auto &m : motors_)
-    // {
-    //   m->setTarget(0.0f);
-    //   m->idle();
-    // }
     RCLCPP_INFO(logger_, "Deactivating hardware interface...");
 
     running_ = false;
@@ -244,14 +245,6 @@ namespace odrive_can_interface
       const rclcpp_lifecycle::State &)
   {
     RCLCPP_INFO(logger_, "on_cleanup(): releasing resources...");
-    for (auto &m : motors_)
-    {
-      m->clearErrors();
-    }
-    if (can_)
-      can_->stopReceive();
-    motors_.clear();
-    // can_.reset();
     return hardware_interface::CallbackReturn::SUCCESS;
   }
 
@@ -260,9 +253,6 @@ namespace odrive_can_interface
       const rclcpp_lifecycle::State &)
   {
     RCLCPP_INFO(logger_, "on_shutdown(): powering down hardware...");
-    // if (can_)
-    //   can_->stopReceive();
-    // can_.reset();
     return hardware_interface::CallbackReturn::SUCCESS;
   }
 
@@ -287,7 +277,7 @@ namespace odrive_can_interface
     auto *cmd_if = shmitf_.cmd_if();
     if (!cmd_if)
     {
-      return hardware_interface::return_type::OK;
+      return hardware_interface::return_type::ERROR;
     }
 
     HwiCommandIfBlock out = *cmd_if;
@@ -295,12 +285,6 @@ namespace odrive_can_interface
         std::min(info_.joints.size(), static_cast<size_t>(SHM_MAX_AXES)));
     out.timestamp_ns = static_cast<uint64_t>(time.nanoseconds());
     out.sequence_id += 1;
-
-    for (size_t i = 0; i < SHM_MAX_AXES; ++i)
-    {
-      out.axes[i].interface = CommandInterface::None;
-      out.axes[i].value = 0.0f;
-    }
 
     for (size_t i = 0; i < out.axis_count; ++i)
     {
@@ -374,19 +358,26 @@ namespace odrive_can_interface
         running_ = false; // stop all threads
         return;
       }
-      else
-      {
 
-        // for(size_t i = 0; i < motors_.size(); ++i)
-        // {
-        //     state_->axes[i].error = static_cast<uint32_t>(motors_[i]->onCanFeedback(motors_[i]->getDeviceId()));
-        //     state_->axes[i].state = static_cast<uint32_t>(motors_[i]->onCanFeedback(motors_[i]->getDeviceId()));
-        //     state_->axes[i].last_hb_timestamp_ns = static_cast<uint32_t>(motors_[i]->onCanFeedback(motors_[i]->getDeviceId()));
-        // }
+      uint32_t sys_err = 0;
+      for (size_t i = 0; i < state_->axis_count; ++i)
+      {
+        state_->axes[i].error = 0;
+        state_->axes[i].error |= (motors_[i]->getAxisError() & 0xFF) << 0;
+        state_->axes[i].error |= (motors_[i]->getMotorError() & 0xFF) << 8;
+        state_->axes[i].error |= (motors_[i]->getEncoderError() & 0xFF) << 16;
+        state_->axes[i].error |= (motors_[i]->getControllerError() & 0xFF) << 24;
+        sys_err |= state_->axes[i].error;
       }
+
+      if (sys_err != 0u)
+      {
+        state_->system_state = SystemState::Error;
+      }
+
       std::this_thread::sleep_until(next_time);
     }
-    RCLCPP_INFO(watch_dog_logger_, " thread stopped");
+    RCLCPP_INFO(watch_dog_logger_, "Watch Dog thread stopped");
   }
   // ========== CAN TRANSMIT THREAD==========
   void OdriveCANSystem::CanInterface()

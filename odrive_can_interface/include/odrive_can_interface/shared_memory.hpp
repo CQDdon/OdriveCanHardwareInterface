@@ -17,10 +17,11 @@ constexpr size_t SHM_MAX_AXES = 8;
 // HWI system state used by HSH/FSM.
 enum class SystemState : uint8_t
 {
-    Error = 0,
+    OnConfigure = 0,
     Idle = 1,
     ClosedLoop = 2,
-    Calib = 3
+    Calib = 3, 
+    Error = 4,
 };
 
 // Controller command interface type.

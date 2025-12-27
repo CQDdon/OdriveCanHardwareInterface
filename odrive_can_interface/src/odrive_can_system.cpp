@@ -145,7 +145,7 @@ namespace odrive_can_interface
   {
     HwiStateBlock st{};
     st.axis_count = static_cast<uint8_t>(std::min(info_.joints.size(), static_cast<size_t>(SHM_MAX_AXES)));
-    st.system_state = SystemState::OnConfigure;
+    // st.system_state = SystemState::OnConfigure;
 
     for (size_t i = 0; i < info_.joints.size(); ++i)
     {
@@ -169,6 +169,8 @@ namespace odrive_can_interface
   hardware_interface::CallbackReturn OdriveCANSystem::on_activate(
       const rclcpp_lifecycle::State &)
   {
+    running_ = true;
+
     if (!shmitf_.ready())
     {
       return hardware_interface::CallbackReturn::ERROR;
@@ -179,8 +181,6 @@ namespace odrive_can_interface
     {
       return hardware_interface::CallbackReturn::ERROR;
     }
-
-    running_ = true;
 
     if (auto *state_ = shmitf_.state())
     {
@@ -216,8 +216,12 @@ namespace odrive_can_interface
 
     // Start threads
     can_receive_thread_ = std::thread(&OdriveCANSystem::CanReceive, this);
-    watch_dog_thread_ = std::thread(&OdriveCANSystem::WatchDog, this);
     can_interface_thread_ = std::thread(&OdriveCANSystem::CanInterface, this);
+    if (watch_dog_ == false)
+    {
+      watch_dog_ = true;
+      watch_dog_thread_ = std::thread(&OdriveCANSystem::WatchDog, this);
+    }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(500));        // Wait for all threads to start
 
@@ -235,9 +239,6 @@ namespace odrive_can_interface
     if (can_receive_thread_.joinable())
       can_receive_thread_.join();
 
-    if (watch_dog_thread_.joinable())
-      watch_dog_thread_.join();
-
     if (can_interface_thread_.joinable())
       can_interface_thread_.join();
     return hardware_interface::CallbackReturn::SUCCESS;
@@ -248,6 +249,9 @@ namespace odrive_can_interface
       const rclcpp_lifecycle::State &)
   {
     RCLCPP_INFO(logger_, "on_cleanup(): releasing resources...");
+    watch_dog_ = false;
+    if (watch_dog_thread_.joinable())
+      watch_dog_thread_.join();
     return hardware_interface::CallbackReturn::SUCCESS;
   }
 
@@ -350,7 +354,7 @@ namespace odrive_can_interface
   {
     RCLCPP_INFO(watch_dog_logger_, "Watch Dog thread started");
     auto next_time = clock::now();
-    while (running_)
+    while (watch_dog_)
     {
       next_time += WATCH_DOG_FRE;
       auto *state_ = shmitf_.state();
@@ -359,6 +363,7 @@ namespace odrive_can_interface
         RCLCPP_ERROR(watch_dog_logger_, "Failed to write state to shared memory");
         fatal_error_ = true;
         running_ = false; // stop all threads
+        watch_dog_ = false;
         return;
       }
 
@@ -377,7 +382,13 @@ namespace odrive_can_interface
       if (sys_err != 0u)
       {
         state_->system_state = SystemState::Error;
+        // RCLCPP_ERROR_THROTTLE(watch_dog_logger_, *rclcpp::Clock().get_clock(), 5000,
+        //                       "System error detected: 0x%08X", sys_err);
       }
+      // else if (state_->system_state == SystemState::Error)
+      // {
+      //   RCLCPP_INFO(watch_dog_logger_, "All errors cleared, transitioning to Idle");
+      // }
 
       std::this_thread::sleep_until(next_time);
     }

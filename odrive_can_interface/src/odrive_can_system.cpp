@@ -335,6 +335,19 @@ namespace odrive_can_interface
                                      static_cast<float>(motors_[i]->getPosition());
           state_->axes[i].velocity = static_cast<float>(2 * 3.141592) *
                                      static_cast<float>(motors_[i]->getVelocity());
+
+          uint32_t axis_err = 0;
+          uint8_t axis_state = 0, motor_err = 0, encoder_err = 0, controller_err = 0, traj_done = 0;
+          uint64_t last_hb_ts = 0;
+          motors_[i]->getStatus(axis_err, axis_state, motor_err, encoder_err, controller_err, traj_done, last_hb_ts);
+
+          state_->axes[i].error = axis_err;
+          state_->axes[i].odrive_state = axis_state;
+          state_->axes[i].motor_error_flag = motor_err;
+          state_->axes[i].encoder_error_flag = encoder_err;
+          state_->axes[i].controller_error_flag = controller_err;
+          state_->axes[i].trajectory_done_flag = traj_done;
+          state_->axes[i].last_hb_timestamp_ns = last_hb_ts;
         }
       }
       else

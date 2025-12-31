@@ -1,4 +1,5 @@
 #include "odrive_can_interface/odrive_motor.hpp"
+#include <chrono>
 #include <cstring>
 #include <iostream>
 
@@ -112,6 +113,25 @@ bool OdriveMotor::getFeedback(float &pos, float &vel) const
     return true;
 }
 
+bool OdriveMotor::getStatus(uint32_t &axis_err,
+                            uint8_t &axis_state,
+                            uint8_t &motor_err,
+                            uint8_t &encoder_err,
+                            uint8_t &controller_err,
+                            uint8_t &trajectory_done,
+                            uint64_t &last_hb_ts) const
+{
+    lock_guard<mutex> lk(mtx_);
+    axis_err = axis_error_;
+    axis_state = static_cast<uint8_t>(axis_state_);
+    motor_err = motor_error_flag_;
+    encoder_err = encoder_error_flag_;
+    controller_err = controller_error_flag_;
+    trajectory_done = traj_done_ ? 1 : 0;
+    last_hb_ts = last_hb_timestamp_ns_;
+    return true;
+}
+
 float OdriveMotor::getVelocity() const
 {
     lock_guard<mutex> lk(mtx_);
@@ -131,6 +151,9 @@ void OdriveMotor::onCanFeedback(uint32_t frame_id, const uint8_t *data, uint8_t 
     if (axis != device_id_)
         return;
 
+    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
     switch (cmd)
     {
     case CMD_GET_ENCODER_ESTIMATES:
@@ -148,25 +171,23 @@ void OdriveMotor::onCanFeedback(uint32_t frame_id, const uint8_t *data, uint8_t 
     case CMD_HEARTBEAT:
         if (dlc >= 8)
         {
-            uint32_t axis_error = 0, axis_state = 0;
-            bool motor_error = false, encoder_error = false, controller_error = false, traj_done = false;
+            uint32_t axis_error = 0;
+            uint8_t axis_state = data[4];
+            uint8_t motor_err_flag = data[5];
+            uint8_t encoder_err_flag = data[6];
+            uint8_t controller_err_flag = data[7] & 0x7F; // lower 7 bits
+            bool traj_done = (data[7] & 0x80) != 0;       // bit7
+
             std::memcpy(&axis_error, data + 0, 4);
-            axis_state = data[4];
-            motor_error = (data[5] >> 0) & 0x01;
-            encoder_error = (data[6] >> 0) & 0x01;
-            controller_error = (data[7] >> 0) & 0x01;
-            traj_done = (data[7] >> 7) & 0x01;
 
-
-            {
-                std::lock_guard<std::mutex> lk(mtx_);
-                axis_error_ = axis_error;
-                axis_state_ = axis_state;
-                motor_error_= motor_error;
-                encoder_error_ = encoder_error;
-                controller_error_ = controller_error;
-                traj_done_ = traj_done;
-            }
+            std::lock_guard<std::mutex> lk(mtx_);
+            axis_error_ = axis_error;
+            axis_state_ = axis_state;
+            motor_error_flag_ = motor_err_flag;
+            encoder_error_flag_ = encoder_err_flag;
+            controller_error_flag_ = controller_err_flag;
+            traj_done_ = traj_done;
+            last_hb_timestamp_ns_ = static_cast<uint64_t>(now_ns);
         }
         break;
 
@@ -175,11 +196,8 @@ void OdriveMotor::onCanFeedback(uint32_t frame_id, const uint8_t *data, uint8_t 
         {
             uint64_t motor_error = 0;
             std::memcpy(&motor_error, data + 0, 8);
-
-            {
-                std::lock_guard<std::mutex> lk(mtx_);
-                motor_error_ = motor_error;
-            }
+            std::lock_guard<std::mutex> lk(mtx_);
+            motor_error_ = motor_error;
         }
         break;
 
@@ -188,11 +206,8 @@ void OdriveMotor::onCanFeedback(uint32_t frame_id, const uint8_t *data, uint8_t 
         {
             uint32_t encoder_error = 0;
             std::memcpy(&encoder_error, data + 0, 4);
-
-            {
-                std::lock_guard<std::mutex> lk(mtx_);
-                encoder_error_ = encoder_error;
-            }
+            std::lock_guard<std::mutex> lk(mtx_);
+            encoder_error_ = encoder_error;
         }
         break;
 
@@ -201,16 +216,12 @@ void OdriveMotor::onCanFeedback(uint32_t frame_id, const uint8_t *data, uint8_t 
         {
             uint32_t controller_error = 0;
             std::memcpy(&controller_error, data + 0, 4);
-
-            {
-                std::lock_guard<std::mutex> lk(mtx_);
-                controller_error_ = controller_error;
-            }
+            std::lock_guard<std::mutex> lk(mtx_);
+            controller_error_ = controller_error;
         }
         break;
 
     default:
-        // Unknown command, ignore
         break;
     }
 }

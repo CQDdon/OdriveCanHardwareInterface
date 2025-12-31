@@ -30,7 +30,7 @@ enum class CommandInterface : uint8_t
     None = 0,
     Position = 1,
     Velocity = 2,
-    Effort = 3
+    Torque = 3
 };
 
 // Control action that HSH requests on each axis.
@@ -54,22 +54,33 @@ enum class SafetyAction : uint8_t
 struct AxisFeedback
 {
     uint32_t can_id;
-    uint8_t online;
-    uint8_t reserved_u8_0;
-    uint16_t reserved_u16_0;
-    uint32_t error;       // ODrive error (bitmask)
+    uint32_t error;        // ODrive error (bitmask)
     uint32_t odrive_state; // ODrive state (IDLE, CLOSED_LOOP, ...)
+    uint8_t motor_error_flag;      // From heartbeat
+    uint8_t encoder_error_flag;    // From heartbeat
+    uint8_t controller_error_flag; // From heartbeat
+    uint8_t trajectory_done_flag;  // From heartbeat (bit)
 
-    float position;       // rad or deg (decide one)
-    float velocity;       // rad/s or m/s
+    float position; // rad or deg (decide one)
+    float velocity; // rad/s or m/s
     uint64_t last_hb_timestamp_ns;
 
     AxisFeedback()
-        : can_id(0), online(0), reserved_u8_0(0), reserved_u16_0(0),
-          error(0), odrive_state(0), position(0.0f), velocity(0.0f),
+        : can_id(0), error(0), odrive_state(0), motor_error_flag(0),
+          encoder_error_flag(0), controller_error_flag(0),
+          trajectory_done_flag(0), position(0.0f), velocity(0.0f),
           last_hb_timestamp_ns(0)
-    {}
+    {
+    }
 };
+
+// Helper: axis online check based on heartbeat timestamp and timeout
+inline bool is_axis_online(const AxisFeedback &ax, uint64_t now_ns, uint64_t timeout_ns)
+{
+    if (ax.last_hb_timestamp_ns == 0)
+        return false;
+    return (now_ns - ax.last_hb_timestamp_ns) <= timeout_ns;
+}
 
 struct HwiStateBlock
 {
@@ -103,7 +114,8 @@ struct AxisCommandIf
     AxisCommandIf()
         : interface(CommandInterface::None),
           reserved_u8_0(0), reserved_u16_0(0), value(0.0f)
-    {}
+    {
+    }
 };
 
 struct HwiCommandIfBlock
@@ -136,7 +148,8 @@ struct AxisControl
     AxisControl()
         : action(ControlAction::None), reserved_u8_0(0),
           reserved_u16_0(0), target(0.0f)
-    {}
+    {
+    }
 };
 
 struct HshControlBlock
@@ -163,69 +176,71 @@ struct HshControlBlock
 namespace odrive_can_interface
 {
 
-class SharedMemorySegment
-{
-public:
-    SharedMemorySegment() = default;
-    SharedMemorySegment(std::string name, std::size_t size);
-    ~SharedMemorySegment();
+    class SharedMemorySegment
+    {
+    public:
+        SharedMemorySegment() = default;
+        SharedMemorySegment(std::string name, std::size_t size);
+        ~SharedMemorySegment();
 
-    SharedMemorySegment(const SharedMemorySegment &) = delete;
-    SharedMemorySegment &operator=(const SharedMemorySegment &) = delete;
-    SharedMemorySegment(SharedMemorySegment &&) noexcept;
-    SharedMemorySegment &operator=(SharedMemorySegment &&) noexcept;
+        SharedMemorySegment(const SharedMemorySegment &) = delete;
+        SharedMemorySegment &operator=(const SharedMemorySegment &) = delete;
+        SharedMemorySegment(SharedMemorySegment &&) noexcept;
+        SharedMemorySegment &operator=(SharedMemorySegment &&) noexcept;
 
-    bool open(bool create_if_missing = true);
-    void close();
-    bool is_open() const noexcept { return ptr_ != nullptr; }
-    void *data() noexcept { return ptr_; }
-    const void *data() const noexcept { return ptr_; }
-    template <typename T> T *as() noexcept { return static_cast<T *>(ptr_); }
-    template <typename T> const T *as() const noexcept { return static_cast<const T *>(ptr_); }
+        bool open(bool create_if_missing = true);
+        void close();
+        bool is_open() const noexcept { return ptr_ != nullptr; }
+        void *data() noexcept { return ptr_; }
+        const void *data() const noexcept { return ptr_; }
+        template <typename T>
+        T *as() noexcept { return static_cast<T *>(ptr_); }
+        template <typename T>
+        const T *as() const noexcept { return static_cast<const T *>(ptr_); }
 
-    const std::string &name() const noexcept { return name_; }
-    std::size_t size() const noexcept { return size_; }
+        const std::string &name() const noexcept { return name_; }
+        std::size_t size() const noexcept { return size_; }
 
-private:
-    void reset();
+    private:
+        void reset();
 
-    std::string name_;
-    std::size_t size_{0};
-    int fd_{-1};
-    void *ptr_{nullptr};
-};
+        std::string name_;
+        std::size_t size_{0};
+        int fd_{-1};
+        void *ptr_{nullptr};
+    };
 
-class SharedMemoryInterface
-{
-public:
-    SharedMemoryInterface() = default;
-    ~SharedMemoryInterface();
+    class SharedMemoryInterface
+    {
+    public:
+        SharedMemoryInterface() = default;
+        ~SharedMemoryInterface();
 
-    SharedMemoryInterface(const SharedMemoryInterface &) = delete;
-    SharedMemoryInterface &operator=(const SharedMemoryInterface &) = delete;
-    SharedMemoryInterface(SharedMemoryInterface &&) noexcept = default;
-    SharedMemoryInterface &operator=(SharedMemoryInterface &&) noexcept = default;
+        SharedMemoryInterface(const SharedMemoryInterface &) = delete;
+        SharedMemoryInterface &operator=(const SharedMemoryInterface &) = delete;
+        SharedMemoryInterface(SharedMemoryInterface &&) noexcept = default;
+        SharedMemoryInterface &operator=(SharedMemoryInterface &&) noexcept = default;
 
-    bool open();
-    bool write_cmd_if(const HwiCommandIfBlock &command_if);
-    bool write_state(const HwiStateBlock &state);
-    bool write_control(const HshControlBlock &control);
-    void close();
-    bool ready() const noexcept;
+        bool open();
+        bool write_cmd_if(const HwiCommandIfBlock &command_if);
+        bool write_state(const HwiStateBlock &state);
+        bool write_control(const HshControlBlock &control);
+        void close();
+        bool ready() const noexcept;
 
-    HwiCommandIfBlock *cmd_if() noexcept;
-    HwiStateBlock *state() noexcept;
-    HshControlBlock *control() noexcept;
-    const HwiCommandIfBlock *cmd_if() const noexcept;
-    const HwiStateBlock *state() const noexcept;
-    const HshControlBlock *control() const noexcept;
+        HwiCommandIfBlock *cmd_if() noexcept;
+        HwiStateBlock *state() noexcept;
+        HshControlBlock *control() noexcept;
+        const HwiCommandIfBlock *cmd_if() const noexcept;
+        const HwiStateBlock *state() const noexcept;
+        const HshControlBlock *control() const noexcept;
 
-private:
-    SharedMemorySegment cmd_if_segment_{SHM_HWI_CMD_IF, sizeof(HwiCommandIfBlock)};
-    SharedMemorySegment state_segment_{SHM_HWI_STATE, sizeof(HwiStateBlock)};
-    SharedMemorySegment control_segment_{SHM_HSH_CTRL, sizeof(HshControlBlock)};
-};
+    private:
+        SharedMemorySegment cmd_if_segment_{SHM_HWI_CMD_IF, sizeof(HwiCommandIfBlock)};
+        SharedMemorySegment state_segment_{SHM_HWI_STATE, sizeof(HwiStateBlock)};
+        SharedMemorySegment control_segment_{SHM_HSH_CTRL, sizeof(HshControlBlock)};
+    };
 
 } // namespace odrive_can_interface
- 
+
 #endif // SHM_HPP

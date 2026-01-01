@@ -1,0 +1,686 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot 
+  name="Swerve_Base" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  
+  <!-- Arguments -->
+  <xacro:arg name="use_sim" default="false"/>
+  <xacro:arg name="controller_config" default="$(find swerve_controller)/config/swerve_controller.yaml"/>
+  <link name="base_link"/>
+  
+  <link name="SwerveBase_Link">
+    <inertial>
+      <origin
+        xyz="-3.4348E-16 1.138E-15 -0.0038228"
+        rpy="0 0 0" />
+      <mass
+        value="6.2397" />
+      <inertia
+        ixx="0.2062"
+        ixy="-4.3252E-16"
+        ixz="-2.0492E-18"
+        iyy="0.2062"
+        iyz="7.7612E-18"
+        izz="0.41144" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://$(find swerve_base_description)/meshes/SwerveBase_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 0 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://$(find swerve_base_description)/meshes/SwerveBase_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  
+  <joint name="base_joint" type="fixed">
+        <parent link="base_link"/>
+        <child link="SwerveBase_Link" />
+        <origin xyz="0 0 0.05" rpy="0 0 0"/>
+  </joint>
+    
+  <link
+    name="FrontDriver_Link">
+    <inertial>
+      <origin
+        xyz="0 6.9389E-18 0.026495"
+        rpy="0 0 0" />
+      <mass
+        value="0.019117" />
+      <inertia
+        ixx="1.8541E-05"
+        ixy="7.4767E-23"
+        ixz="4.6673E-23"
+        iyy="1.4635E-05"
+        iyz="3.9341E-22"
+        izz="4.5922E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://$(find swerve_base_description)/meshes/FrontDriver_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 0 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://$(find swerve_base_description)/meshes/FrontDriver_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="FrontDriver_Joint"
+    type="revolute">
+    <origin
+      xyz="0.40735 0 -0.0039497"
+      rpy="0 0 0" />
+    <parent
+      link="SwerveBase_Link" />
+    <child
+      link="FrontDriver_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-6.283185307"
+      upper="6.283185307"
+      effort="10"
+      velocity="50" />
+    <dynamics
+      damping="0.1"
+      friction="0.1" />
+  </joint>
+  <link
+    name="FrontWheel_Link">
+    <inertial>
+      <origin
+        xyz="5.5511E-17 0 6.9389E-18"
+        rpy="0 0 0" />
+      <mass
+        value="0.23032" />
+      <inertia
+        ixx="0.00016446"
+        ixy="3.7719E-22"
+        ixz="8.878E-21"
+        iyy="0.00029438"
+        iyz="2.9646E-21"
+        izz="0.00016446" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://$(find swerve_base_description)/meshes/FrontWheel_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 1 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://$(find swerve_base_description)/meshes/FrontWheel_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="FrontWheel_Joint"
+    type="continuous">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="FrontDriver_Link" />
+    <child
+      link="FrontWheel_Link" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      effort="10"
+      velocity="50" />
+    <dynamics
+      damping="0.1"
+      friction="0.1" />
+  </joint>
+  <link
+    name="RearRightDriver_Link">
+    <inertial>
+      <origin
+        xyz="0 0 0.026495"
+        rpy="0 0 0" />
+      <mass
+        value="0.019117" />
+      <inertia
+        ixx="1.8541E-05"
+        ixy="2.0673E-23"
+        ixz="2.256E-23"
+        iyy="1.4635E-05"
+        iyz="6.3813E-23"
+        izz="4.5922E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://$(find swerve_base_description)/meshes/RearRightDriver_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 0 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://$(find swerve_base_description)/meshes/RearRightDriver_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="RearRightDriver_Joint"
+    type="revolute">
+    <origin
+      xyz="-0.20368 -0.35278 -0.0039497"
+      rpy="0 0 0" />
+    <parent
+      link="SwerveBase_Link" />
+    <child
+      link="RearRightDriver_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-6.283185307"
+      upper="6.283185307"
+      effort="10"
+      velocity="50" />
+    <dynamics
+      damping="0.1"
+      friction="0.1" />
+  </joint>
+  <link
+    name="RearRightWheel_Link">
+    <inertial>
+      <origin
+        xyz="0 -5.5511E-17 0"
+        rpy="0 0 0" />
+      <mass
+        value="0.23032" />
+      <inertia
+        ixx="0.00016446"
+        ixy="-4.566E-22"
+        ixz="8.8767E-21"
+        iyy="0.00029438"
+        iyz="-3.5999E-21"
+        izz="0.00016446" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://$(find swerve_base_description)/meshes/RearRightWheel_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 1 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://$(find swerve_base_description)/meshes/RearRightWheel_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="RearRightWheel_Joint"
+    type="continuous">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="RearRightDriver_Link" />
+    <child
+      link="RearRightWheel_Link" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      effort="10"
+      velocity="50" />
+    <dynamics
+      damping="0.1"
+      friction="0.1" />
+  </joint>
+  <link
+    name="RearLeftDriver_Link">
+    <inertial>
+      <origin
+        xyz="0 0 0.026495"
+        rpy="0 0 0" />
+      <mass
+        value="0.019117" />
+      <inertia
+        ixx="1.8541E-05"
+        ixy="1.8584E-23"
+        ixz="9.2108E-24"
+        iyy="1.4635E-05"
+        iyz="4.2299E-22"
+        izz="4.5922E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://$(find swerve_base_description)/meshes/RearLeftDriver_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 0 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://$(find swerve_base_description)/meshes/RearLeftDriver_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="RearLeftDriver_Joint"
+    type="revolute">
+    <origin
+      xyz="-0.20368 0.35278 -0.0039497"
+      rpy="0 0 0" />
+    <parent
+      link="SwerveBase_Link" />
+    <child
+      link="RearLeftDriver_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-6.283185307"
+      upper="6.283185307"
+      effort="10"
+      velocity="50" />
+    <dynamics
+      damping="0.1"
+      friction="0.1" />
+  </joint>
+  <link
+    name="RearLeftWheel_Link">
+    <inertial>
+      <origin
+        xyz="0 -1.1102E-16 0"
+        rpy="0 0 0" />
+      <mass
+        value="0.23032" />
+      <inertia
+        ixx="0.00016446"
+        ixy="-4.566E-22"
+        ixz="8.8767E-21"
+        iyy="0.00029438"
+        iyz="-3.5999E-21"
+        izz="0.00016446" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://$(find swerve_base_description)/meshes/RearLeftWheel_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0 1 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://$(find swerve_base_description)/meshes/RearLeftWheel_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="RearLeftWheel_Joint"
+    type="continuous">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="RearLeftDriver_Link" />
+    <child
+      link="RearLeftWheel_Link" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      effort="10"
+      velocity="50" />
+    <dynamics
+      damping="0.1"
+      friction="0.1" />
+  </joint>
+
+  <!-- ========================================== -->
+  <!-- CAMERA SENSOR - RGB Depth Camera          -->
+  <!-- ========================================== -->
+  
+  <!-- Material definition for camera -->
+  <material name="camera_dark_gray">
+    <color rgba="0.2 0.2 0.2 1.0"/>
+  </material>
+  
+  <!-- RGB Camera Link - Orbbec Gemini 2 Dimensions -->
+  <link name="rgb_cam_camera_link_frame">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.098" />
+      <inertia
+        ixx="1.0e-5"
+        ixy="0"
+        ixz="0"
+        iyy="1.0e-5"
+        iyz="0"
+        izz="1.0e-5" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.03 0.09 0.025" />
+      </geometry>
+      <material name="camera_dark_gray" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.03 0.09 0.025" />
+      </geometry>
+    </collision>
+  </link>
+  
+  <!-- Fixed joint for RGB Camera - rigidly mounted to base -->
+  <joint name="rgb_cam_camera_joint" type="fixed">
+    <origin xyz="0 0 0.3" rpy="0 0 0" />
+    <parent link="SwerveBase_Link" />
+    <child link="rgb_cam_camera_link_frame" />
+  </joint>
+
+  <!-- Gazebo RGBD Camera - For Gazebo Ignition/Sim -->
+  <!-- <gazebo reference="rgb_cam_camera_link_frame">
+    <material>Gazebo/DarkGrey</material>
+    <sensor name="rgbd_camera" type="rgbd_camera">
+      <always_on>1</always_on>
+      <update_rate>30</update_rate>
+      <visualize>true</visualize>
+      <topic>rgbd_camera</topic>
+      <gz_frame_id>rgb_cam_camera_link_frame</gz_frame_id>
+      <camera name="rgbd_camera">
+        <horizontal_fov>1.0472</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.1</near>
+          <far>10.0</far>
+        </clip>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.007</stddev>
+        </noise>
+      </camera>
+    </sensor>
+  </gazebo> -->
+
+  <!-- 
+  <transmission name="FrontDriver_Trans">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="FrontDriver_Joint">
+      <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
+    </joint>
+    <actuator name="FrontDriverMotor">
+      <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>
+
+  <transmission name="FrontWheel_Trans">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="FrontWheel_Joint">
+      <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
+    </joint>
+    <actuator name="FrontWheelMotor">
+      <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>
+
+  <transmission name="RearRightDriver_Trans">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="RearRightDriver_Joint">
+      <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
+    </joint>
+    <actuator name="RearRightDriverMotor">
+      <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>
+
+  <transmission name="RearRightWheel_Trans">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="RearRightWheel_Joint">
+      <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
+    </joint>
+    <actuator name="RearRightWheelMotor">
+      <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>
+
+  <transmission name="RearLeftDriver_Trans">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="RearLeftDriver_Joint">
+      <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
+    </joint>
+    <actuator name="RearLeftDriverMotor">
+      <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>
+
+  <transmission name="RearLeftWheel_Trans">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="RearLeftWheel_Joint">
+      <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
+    </joint>
+    <actuator name="RearLeftWheelMotor">
+      <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>-->
+
+  <!-- ===========================
+       Transmissions (updated: no hardwareInterface tags, only SimpleTransmission for mapping)
+       Interfaces are defined solely in <ros2_control>
+       =========================== -->
+  <transmission name="FrontDriver_Trans">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="FrontDriver_Joint"/>
+    <actuator name="FrontDriverMotor">
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>
+
+  <transmission name="FrontWheel_Trans">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="FrontWheel_Joint"/>
+    <actuator name="FrontWheelMotor">
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>
+
+  <transmission name="RearRightDriver_Trans">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="RearRightDriver_Joint"/>
+    <actuator name="RearRightDriverMotor">
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>
+
+  <transmission name="RearRightWheel_Trans">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="RearRightWheel_Joint"/>
+    <actuator name="RearRightWheelMotor">
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>
+
+  <transmission name="RearLeftDriver_Trans">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="RearLeftDriver_Joint"/>
+    <actuator name="RearLeftDriverMotor">
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>
+
+  <transmission name="RearLeftWheel_Trans">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="RearLeftWheel_Joint"/>
+    <actuator name="RearLeftWheelMotor">
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>
+
+  <!-- <gazebo>
+    <plugin filename="libgz_ros2_control-system.so" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <ros>
+        <namespace>/</namespace>
+        <remapping>~/robot_description:=/robot_description</remapping>
+      </ros>
+      <robot_param>robot_description</robot_param>
+      <parameters>$(arg controller_config)</parameters>
+    </plugin>
+  </gazebo> -->
+
+  <ros2_control name="SwerveDrive" type="system">
+    <hardware>
+        <plugin>odrive_can_interface/OdriveCANSystem</plugin>
+        <param name="can_port">can0</param>
+        <param name="baud_rate">500000</param>
+        <param name="timeout_ms">1000</param>
+        <param name="status_publish_rate">20.0</param>
+        <!-- <param name="wheel_diameter">100</param> -->
+
+    </hardware>
+
+  <!-- Steering joints first -->
+    <joint name="FrontDriver_Joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <param name="id">1</param>
+    </joint>
+    <joint name="RearLeftDriver_Joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <param name="id">3</param>
+    </joint>
+    <joint name="RearRightDriver_Joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <param name="id">5</param>
+    </joint>
+
+  <!-- Wheel joints second -->
+    <joint name="FrontWheel_Joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <param name="id">0</param>
+    </joint>
+    <joint name="RearLeftWheel_Joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <param name="id">2</param>
+    </joint>
+    <joint name="RearRightWheel_Joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <param name="id">4</param>
+    </joint>
+  </ros2_control>
+
+   <!--<gazebo>
+    <plugin filename="libgz_ros2_control-system.so" name="gz_ros2_control::GazeboSimROS2ControlPlugin">      
+      <ros>
+        <namespace>/</namespace>
+        <remapping>~/robot_description:=/robot_description</remapping>
+      </ros>
+      <robot_param>robot_description</robot_param>
+      <parameters>
+        /home/phuongdong/A-File/Work/BK_Robotics/Ros/Training/Project/SwerveBase_ws/install/swerve_controller/share/swerve_controller/config/swerve_controller.yaml
+      </parameters>    
+    </plugin>
+    <plugin filename="libignition-gazebo-joint-state-publisher-system.so" name="ignition::gazebo::systems::JointStatePublisher"/>
+  </gazebo>-->
+
+</robot>

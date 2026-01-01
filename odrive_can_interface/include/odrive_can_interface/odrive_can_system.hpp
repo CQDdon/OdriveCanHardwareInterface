@@ -4,6 +4,10 @@
 #include <string>
 #include <memory>
 #include <cstdint>
+#include <thread>
+#include <chrono>
+#include <mutex>
+#include <atomic>
 
 #include "rclcpp/rclcpp.hpp"
 #include "hardware_interface/system_interface.hpp"
@@ -13,8 +17,11 @@
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
 #include "pluginlib/class_list_macros.hpp"
 
+
+
 #include "odrive_can_interface/odrive_motor.hpp"
 #include "odrive_can_interface/can_comm.hpp"
+#include "odrive_can_interface/shared_memory.hpp"
 
 namespace odrive_can_interface
 {
@@ -27,7 +34,6 @@ namespace odrive_can_interface
         // Lifecycle
         hardware_interface::CallbackReturn on_init(
             const hardware_interface::HardwareInfo &info) override;
-
         hardware_interface::CallbackReturn on_configure(
             const rclcpp_lifecycle::State &previous_state) override;
 
@@ -56,6 +62,9 @@ namespace odrive_can_interface
 
     private:
         rclcpp::Logger logger_{rclcpp::get_logger("OdriveCANSystem")};
+        rclcpp::Logger can_transmit_logger_{rclcpp::get_logger("Can Transmit")};
+        rclcpp::Logger can_receive_logger_{rclcpp::get_logger("Can Receive")};
+        rclcpp::Logger watch_dog_logger_{rclcpp::get_logger("Watch Dog")};
 
         // HW params (from URDF <hardware><param>)
         std::string can_port_{"can0"};
@@ -74,7 +83,32 @@ namespace odrive_can_interface
         std::vector<double> command_pos_;
         std::vector<double> command_vel_;
 
-        std::shared_ptr<OdriveMotor> make_motor_for_joint(const hardware_interface::ComponentInfo &joint);
-    };
+    // Shared memory 
+        SharedMemoryInterface shmitf_;
+    // Threads
+        std::thread can_receive_thread_;
+        std::thread watch_dog_thread_;
+        std::thread can_interface_thread_;
+
+    // Control flag
+        std::atomic<bool> running_{false};
+        std::atomic<bool> watch_dog_{false};
+        std::atomic<bool> fatal_error_{false};
+        std::string last_error_;
+
+
+    // Thread functions
+        void CanReceive();
+        void WatchDog();
+        void CanInterface();
+    // Frequency control
+        using clock = std::chrono::steady_clock;
+        static constexpr std::chrono::microseconds TX_FRE{5000}; // 200 Hz
+        static constexpr std::chrono::microseconds RX_FRE{5000}; // 200 Hz
+        static constexpr std::chrono::microseconds WATCH_DOG_FRE{100000}; // 10 Hz  
+
+    };  
+
 
 } // namespace odrive_can_interface
+

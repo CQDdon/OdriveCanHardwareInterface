@@ -15,16 +15,6 @@ constexpr const char *SHM_HSH_CTRL = "/hsh_to_hwi_ctrl";
 
 constexpr size_t SHM_MAX_AXES = 8;
 
-// HWI system state used by HSH/FSM.
-enum class SystemState : uint8_t
-{
-    Configuring = 0,
-    Idling = 1,
-    Running = 2,
-    Calibrating = 3,
-    Error = 4,
-};
-
 // Controller command interface type.
 enum class CommandInterface : uint8_t
 {
@@ -84,18 +74,19 @@ struct AxisFeedbackLite
 
 struct AxisFeedbackDebug
 {
+    uint32_t axis_error;
     uint8_t odrive_state;          // Raw AxisState from heartbeat
-    uint8_t motor_error_flag;      // From heartbeat
-    uint8_t encoder_error_flag;    // From heartbeat
-    uint8_t controller_error_flag; // From heartbeat
     uint8_t trajectory_done_flag;  // From heartbeat (bit)
-    uint8_t reserved_u8_0[3];
+    uint16_t reserved_u16_0;
+    uint32_t motor_error;
+    uint32_t encoder_error;
+    uint32_t controller_error;
     uint64_t last_hb_timestamp_ns;
 
     AxisFeedbackDebug()
-        : odrive_state(0), motor_error_flag(0), encoder_error_flag(0),
-          controller_error_flag(0), trajectory_done_flag(0),
-          reserved_u8_0{0, 0, 0}, last_hb_timestamp_ns(0)
+        : axis_error(0), odrive_state(0), trajectory_done_flag(0), reserved_u16_0(0),
+          motor_error(0), encoder_error(0), controller_error(0),
+          last_hb_timestamp_ns(0)
     {
     }
 };
@@ -135,7 +126,6 @@ inline AxisStateSummary map_odrive_axis_state_summary(uint8_t axis_state)
 
 struct HwiStateBlock
 {
-    SystemState system_state;
     uint32_t sequence_id;
     uint64_t timestamp_ns;
     uint8_t axis_count;
@@ -144,8 +134,7 @@ struct HwiStateBlock
     AxisFeedbackLite axes[SHM_MAX_AXES];
 
     HwiStateBlock()
-        : system_state(SystemState::Idling),
-          sequence_id(0), timestamp_ns(0), axis_count(0),
+        : sequence_id(0), timestamp_ns(0), axis_count(0),
           reserved_u8_1(0), reserved_u16_1(0)
     {
         for (auto &axis : axes)

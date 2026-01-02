@@ -146,7 +146,6 @@ namespace odrive_can_interface
   {
     HwiStateBlock st{};
     st.axis_count = static_cast<uint8_t>(std::min(info_.joints.size(), static_cast<size_t>(SHM_MAX_AXES)));
-    st.system_state = SystemState::Configuring;
 
     for (size_t i = 0; i < info_.joints.size(); ++i)
     {
@@ -224,7 +223,7 @@ namespace odrive_can_interface
       watch_dog_thread_ = std::thread(&OdriveCANSystem::WatchDog, this);
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));        // Wait for all threads to start
+    std::this_thread::sleep_for(std::chrono::milliseconds(500)); // Wait for all threads to start
 
     return hardware_interface::CallbackReturn::SUCCESS;
   }
@@ -341,7 +340,9 @@ namespace odrive_can_interface
                                      static_cast<float>(motors_[i]->getVelocity());
 
           uint32_t axis_err = 0;
-          uint8_t axis_state = 0, motor_err = 0, encoder_err = 0, controller_err = 0, traj_done = 0;
+          uint8_t axis_state = 0, traj_done = 0;
+          uint64_t motor_err = 0;
+          uint32_t encoder_err = 0, controller_err = 0;
           uint64_t last_hb_ts = 0;
           motors_[i]->getStatus(axis_err, axis_state, motor_err, encoder_err, controller_err, traj_done, last_hb_ts);
 
@@ -357,10 +358,11 @@ namespace odrive_can_interface
             state_dbg->sequence_id = state_->sequence_id;
             state_dbg->timestamp_ns = state_->timestamp_ns;
             state_dbg->axis_count = state_->axis_count;
+            state_dbg->axes[i].axis_error = axis_err;
             state_dbg->axes[i].odrive_state = axis_state;
-            state_dbg->axes[i].motor_error_flag = motor_err;
-            state_dbg->axes[i].encoder_error_flag = encoder_err;
-            state_dbg->axes[i].controller_error_flag = controller_err;
+            state_dbg->axes[i].motor_error = static_cast<uint32_t>(motor_err);
+            state_dbg->axes[i].encoder_error = encoder_err;
+            state_dbg->axes[i].controller_error = controller_err;
             state_dbg->axes[i].trajectory_done_flag = traj_done;
             state_dbg->axes[i].last_hb_timestamp_ns = last_hb_ts;
           }
@@ -397,7 +399,6 @@ namespace odrive_can_interface
         return;
       }
 
-      uint32_t sys_err = 0;
       for (size_t i = 0; i < state_->axis_count; ++i)
       {
         const uint8_t axis_state = static_cast<uint8_t>(motors_[i]->getAxisState());
@@ -407,24 +408,15 @@ namespace odrive_can_interface
         state_->axes[i].error |= (motors_[i]->getMotorError() & 0xFF) << 8;
         state_->axes[i].error |= (motors_[i]->getEncoderError() & 0xFF) << 16;
         state_->axes[i].error |= (motors_[i]->getControllerError() & 0xFF) << 24;
-        sys_err |= state_->axes[i].error;
-
         if (state_dbg)
         {
+          state_dbg->axes[i].axis_error = state_->axes[i].error;
           state_dbg->axes[i].odrive_state = axis_state;
+          state_dbg->axes[i].motor_error = static_cast<uint32_t>(motors_[i]->getMotorError());
+          state_dbg->axes[i].encoder_error = motors_[i]->getEncoderError();
+          state_dbg->axes[i].controller_error = motors_[i]->getControllerError();
         }
       }
-
-      if (sys_err != 0u)
-      {
-        state_->system_state = SystemState::Error;
-        // RCLCPP_ERROR_THROTTLE(watch_dog_logger_, *rclcpp::Clock().get_clock(), 5000,
-        //                       "System error detected: 0x%08X", sys_err);
-      }
-      // else if (state_->system_state == SystemState::Error)
-      // {
-      //   RCLCPP_INFO(watch_dog_logger_, "All errors cleared, transitioning to Idle");
-      // }
 
       std::this_thread::sleep_until(next_time);
     }

@@ -2,6 +2,7 @@
 
 namespace odrive_can_interface
 {
+  constexpr uint64_t kHbOnlineTimeoutNs = 200000000ULL; // 200ms, TODO: make configurable
 
   // ========== INIT ==========
   hardware_interface::CallbackReturn OdriveCANSystem::on_init(
@@ -145,7 +146,7 @@ namespace odrive_can_interface
   {
     HwiStateBlock st{};
     st.axis_count = static_cast<uint8_t>(std::min(info_.joints.size(), static_cast<size_t>(SHM_MAX_AXES)));
-    // st.system_state = SystemState::OnConfigure;
+    st.system_state = SystemState::Configuring;
 
     for (size_t i = 0; i < info_.joints.size(); ++i)
     {
@@ -192,7 +193,7 @@ namespace odrive_can_interface
       {
         RCLCPP_INFO(logger_, "Axis[%u], state = %u, can_id = %u",
                     static_cast<unsigned>(i),
-                    state_->axes[i].odrive_state,
+                    static_cast<uint8_t>(state_->axes[i].odrive_state_summary),
                     state_->axes[i].can_id);
       }
     }
@@ -321,6 +322,9 @@ namespace odrive_can_interface
       next_time += RX_FRE;
       if (auto *state_ = shmitf_.state())
       {
+        auto *state_dbg = shmitf_.state_debug();
+        const auto *ctrl = shmitf_.control();
+        const bool debug_enabled = (ctrl && ctrl->debug_enable != 0);
         const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                 clock::now().time_since_epoch())
                                 .count();
@@ -342,12 +346,24 @@ namespace odrive_can_interface
           motors_[i]->getStatus(axis_err, axis_state, motor_err, encoder_err, controller_err, traj_done, last_hb_ts);
 
           state_->axes[i].error = axis_err;
-          state_->axes[i].odrive_state = axis_state;
-          state_->axes[i].motor_error_flag = motor_err;
-          state_->axes[i].encoder_error_flag = encoder_err;
-          state_->axes[i].controller_error_flag = controller_err;
-          state_->axes[i].trajectory_done_flag = traj_done;
-          state_->axes[i].last_hb_timestamp_ns = last_hb_ts;
+          state_->axes[i].odrive_state_summary = map_odrive_axis_state_summary(axis_state);
+          state_->axes[i].online = (last_hb_ts != 0 &&
+                                    (static_cast<uint64_t>(now_ns) - last_hb_ts) <= kHbOnlineTimeoutNs)
+                                       ? 1
+                                       : 0;
+
+          if (debug_enabled && state_dbg)
+          {
+            state_dbg->sequence_id = state_->sequence_id;
+            state_dbg->timestamp_ns = state_->timestamp_ns;
+            state_dbg->axis_count = state_->axis_count;
+            state_dbg->axes[i].odrive_state = axis_state;
+            state_dbg->axes[i].motor_error_flag = motor_err;
+            state_dbg->axes[i].encoder_error_flag = encoder_err;
+            state_dbg->axes[i].controller_error_flag = controller_err;
+            state_dbg->axes[i].trajectory_done_flag = traj_done;
+            state_dbg->axes[i].last_hb_timestamp_ns = last_hb_ts;
+          }
         }
       }
       else
@@ -371,6 +387,7 @@ namespace odrive_can_interface
     {
       next_time += WATCH_DOG_FRE;
       auto *state_ = shmitf_.state();
+      auto *state_dbg = shmitf_.state_debug();
       if (!state_)
       {
         RCLCPP_ERROR(watch_dog_logger_, "Failed to write state to shared memory");
@@ -383,13 +400,19 @@ namespace odrive_can_interface
       uint32_t sys_err = 0;
       for (size_t i = 0; i < state_->axis_count; ++i)
       {
-        state_->axes[i].odrive_state = motors_[i]->getAxisState();
+        const uint8_t axis_state = static_cast<uint8_t>(motors_[i]->getAxisState());
+        state_->axes[i].odrive_state_summary = map_odrive_axis_state_summary(axis_state);
         state_->axes[i].error = 0;
         state_->axes[i].error |= (motors_[i]->getAxisError() & 0xFF) << 0;
         state_->axes[i].error |= (motors_[i]->getMotorError() & 0xFF) << 8;
         state_->axes[i].error |= (motors_[i]->getEncoderError() & 0xFF) << 16;
         state_->axes[i].error |= (motors_[i]->getControllerError() & 0xFF) << 24;
         sys_err |= state_->axes[i].error;
+
+        if (state_dbg)
+        {
+          state_dbg->axes[i].odrive_state = axis_state;
+        }
       }
 
       if (sys_err != 0u)

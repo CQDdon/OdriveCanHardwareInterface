@@ -56,11 +56,12 @@ enum class AxisStateSummary : uint8_t
 struct AxisFeedbackLite
 {
     uint32_t can_id;
-    AxisStateSummary odrive_state_summary;
-    uint32_t error;
+    uint32_t error;    
+    uint16_t reserved_u16_0;
     uint8_t online;
     uint8_t reserved_u8_0;
-    uint16_t reserved_u16_0;
+    AxisStateSummary odrive_state_summary;
+
     float position; // rad
     float velocity; // rad/s
 
@@ -74,14 +75,15 @@ struct AxisFeedbackLite
 
 struct AxisFeedbackDebug
 {
+    uint64_t last_hb_timestamp_ns;
     uint32_t axis_error;
-    uint8_t odrive_state;          // Raw AxisState from heartbeat
-    uint8_t trajectory_done_flag;  // From heartbeat (bit)
-    uint16_t reserved_u16_0;
     uint32_t motor_error;
     uint32_t encoder_error;
     uint32_t controller_error;
-    uint64_t last_hb_timestamp_ns;
+    uint16_t reserved_u16_0;
+    uint8_t odrive_state;          // Raw AxisState from heartbeat
+    uint8_t trajectory_done_flag;  // From heartbeat (bit)
+
 
     AxisFeedbackDebug()
         : axis_error(0), odrive_state(0), trajectory_done_flag(0), reserved_u16_0(0),
@@ -126,11 +128,11 @@ inline AxisStateSummary map_odrive_axis_state_summary(uint8_t axis_state)
 
 struct HwiStateBlock
 {
-    uint32_t sequence_id;
     uint64_t timestamp_ns;
-    uint8_t axis_count;
-    uint8_t reserved_u8_1;
+    uint32_t sequence_id;
     uint16_t reserved_u16_1;
+    uint8_t reserved_u8_1;
+    uint8_t axis_count;
     AxisFeedbackLite axes[SHM_MAX_AXES];
 
     HwiStateBlock()
@@ -146,11 +148,11 @@ struct HwiStateBlock
 
 struct HwiStateDebugBlock
 {
-    uint32_t sequence_id;
     uint64_t timestamp_ns;
+    uint32_t sequence_id;
+    uint16_t reserved_u16_0;
     uint8_t axis_count;
     uint8_t reserved_u8_0;
-    uint16_t reserved_u16_0;
     AxisFeedbackDebug axes[SHM_MAX_AXES];
 
     HwiStateDebugBlock()
@@ -166,10 +168,10 @@ struct HwiStateDebugBlock
 
 struct AxisCommandIf
 {
-    CommandInterface interface;
-    uint8_t reserved_u8_0;
-    uint16_t reserved_u16_0;
     float value;
+    uint16_t reserved_u16_0;
+    uint8_t reserved_u8_0;
+    CommandInterface interface;
 
     AxisCommandIf()
         : interface(CommandInterface::None),
@@ -180,11 +182,11 @@ struct AxisCommandIf
 
 struct HwiCommandIfBlock
 {
-    uint32_t sequence_id;
     uint64_t timestamp_ns;
-    uint8_t axis_count;
-    uint8_t reserved_u8_0;
+    uint32_t sequence_id;
     uint16_t reserved_u16_0;
+    uint8_t reserved_u8_0;
+    uint8_t axis_count;
     AxisCommandIf axes[SHM_MAX_AXES];
 
     HwiCommandIfBlock()
@@ -200,10 +202,10 @@ struct HwiCommandIfBlock
 
 struct AxisControl
 {
-    ControlAction action;
-    uint8_t reserved_u8_0;
-    uint16_t reserved_u16_0;
     float target;
+    uint16_t reserved_u16_0;
+    uint8_t reserved_u8_0;
+    ControlAction action;
 
     AxisControl()
         : action(ControlAction::None), reserved_u8_0(0),
@@ -214,8 +216,8 @@ struct AxisControl
 
 struct HshControlBlock
 {
-    uint32_t sequence_id;
     uint64_t timestamp_ns;
+    uint32_t sequence_id;
     uint8_t axis_count;
     uint8_t motion_enable;
     SafetyAction safety_action;

@@ -434,6 +434,11 @@ namespace odrive_can_interface
       RCLCPP_ERROR(can_transmit_logger_, "Failed to open CAN interface: %s", can_port_.c_str());
       fatal_error_ = true;
       running_ = false; // stop all threads
+      auto *state_ = shmitf_.state();
+      for (size_t i = 0; i< info_.joints.size(); ++i)
+      {
+        state_->axes[i].odrive_state_summary = AxisStateSummary::Unknown;
+      }
       return;
     }
     RCLCPP_INFO(can_transmit_logger_,

@@ -493,7 +493,15 @@ namespace odrive_can_interface
 
         for (size_t i = 0; i < axis_count; ++i)
         {
-          switch (ctrl.axes[i].action)
+          const auto action = ctrl.axes[i].action;
+          if (!ctrl.motion_enable &&
+              (action == ControlAction::None || action == ControlAction::ClosedLoop))
+          {
+            (void)motors_[i]->idle();
+            continue;
+          }
+
+          switch (action)
           {
           case ControlAction::Idle:
             (void)motors_[i]->idle();

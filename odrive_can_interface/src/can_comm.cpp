@@ -1,6 +1,9 @@
 #include "odrive_can_interface/can_comm.hpp"
 #include <cstring>
 #include <cerrno>
+#include <unordered_map>
+#include <fcntl.h>
+#include <poll.h>
 
 using namespace std;
 
@@ -55,6 +58,19 @@ bool CANInterface::openInterface(const string &interface)
         close(can_socket_);
         can_socket_ = -1;
         return false;
+    }
+
+    const int flags = fcntl(can_socket_, F_GETFL, 0);
+    if (flags >= 0)
+    {
+        if (fcntl(can_socket_, F_SETFL, flags | O_NONBLOCK) < 0)
+        {
+            cerr << "Warning: failed to set CAN socket non-blocking mode." << endl;
+        }
+    }
+    else
+    {
+        cerr << "Warning: failed to get CAN socket flags." << endl;
     }
 
     cout << "Socket successfully bound to " << interface << endl;
@@ -120,26 +136,55 @@ void CANInterface::receiveLoop()
     }
 
     struct can_frame frame;
+    std::unordered_map<uint32_t, struct can_frame> latest_frames;
     while (receiving_)
     {
-        int nbytes = read(can_socket_, &frame, sizeof(frame));
-        if (nbytes < 0)
+        struct pollfd pfd;
+        pfd.fd = can_socket_;
+        pfd.events = POLLIN;
+        const int poll_ret = poll(&pfd, 1, 10);
+        if (poll_ret < 0)
         {
             if (errno == EINTR)
-                continue; // bị tín hiệu, thử lại
+                continue;
             break;
         }
-        else if (nbytes < static_cast<int>(sizeof(frame)))
+        if (poll_ret == 0 || !(pfd.revents & POLLIN))
         {
-            cerr << "Error: Incomplete CAN frame received." << endl;
             continue;
         }
 
-        if (callback_)
+        latest_frames.clear();
+        while (true)
         {
+            int nbytes = read(can_socket_, &frame, sizeof(frame));
+            if (nbytes < 0)
+            {
+                if (errno == EINTR)
+                    continue;
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                    break;
+                return;
+            }
+            if (nbytes < static_cast<int>(sizeof(frame)))
+            {
+                cerr << "Error: Incomplete CAN frame received." << endl;
+                continue;
+            }
+            latest_frames[frame.can_id] = frame;
+        }
+
+        if (!callback_)
+        {
+            continue;
+        }
+
+        for (const auto &item : latest_frames)
+        {
+            const auto &frm = item.second;
             uint8_t data[8];
-            memcpy(data, frame.data, frame.can_dlc);
-            callback_(frame.can_id, data, frame.can_dlc);
+            memcpy(data, frm.data, frm.can_dlc);
+            callback_(frm.can_id, data, frm.can_dlc);
         }
     }
 }

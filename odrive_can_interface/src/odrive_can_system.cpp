@@ -452,7 +452,7 @@ namespace odrive_can_interface
       fatal_error_ = true;
       running_ = false; // stop all threads
       auto *state_ = shmitf_.state();
-      for (size_t i = 0; i< info_.joints.size(); ++i)
+      for (size_t i = 0; i < info_.joints.size(); ++i)
       {
         state_->axes[i].odrive_state_summary = AxisStateSummary::Unknown;
       }
@@ -518,47 +518,49 @@ namespace odrive_can_interface
             last_axis_action_[i] = ControlAction::None;
             continue;
           }
-          if (i < action_count)
-          {
-            if (action == ControlAction::Homing)
-            {
-              if (last_axis_action_[i] == ControlAction::Homing)
-              {
-                continue;
-              }
-              last_axis_action_[i] = action;
-            }
-            else
-            {
-              last_axis_action_[i] = action;
-            }
-          }
+          ControlAction effective_action = action;
           if (!ctrl.motion_enable && action == ControlAction::ClosedLoop)
           {
-            (void)motors_[i]->idle();
-            continue;
+            effective_action = ControlAction::Idle;
           }
 
-          switch (action)
+          bool send_action = false;
+          if (i < action_count)
           {
-          case ControlAction::Idle:
-            (void)motors_[i]->idle();
-            break;
-          case ControlAction::ClosedLoop:
-            (void)motors_[i]->closeLoopControl();
-            break;
-          case ControlAction::FullCalib:
-            (void)motors_[i]->fullCalibration();
-            break;
-          case ControlAction::Homing:
-            (void)motors_[i]->setHoming();
-            break;
-          case ControlAction::ClearErrors:
-            (void)motors_[i]->clearErrors();
-            break;
-          case ControlAction::None:
-          default:
-            break;
+            if (effective_action == ControlAction::None)
+            {
+              last_axis_action_[i] = ControlAction::None;
+            }
+            else if (last_axis_action_[i] != effective_action)
+            {
+              last_axis_action_[i] = effective_action;
+              send_action = true;
+            }
+          }
+
+          if (send_action)
+          {
+            switch (effective_action)
+            {
+            case ControlAction::Idle:
+              (void)motors_[i]->idle();
+              break;
+            case ControlAction::ClosedLoop:
+              (void)motors_[i]->closeLoopControl();
+              break;
+            case ControlAction::FullCalib:
+              (void)motors_[i]->fullCalibration();
+              break;
+            case ControlAction::Homing:
+              (void)motors_[i]->setHoming();
+              break;
+            case ControlAction::ClearErrors:
+              (void)motors_[i]->clearErrors();
+              break;
+            case ControlAction::None:
+            default:
+              break;
+            }
           }
 
           if (ctrl.motion_enable &&

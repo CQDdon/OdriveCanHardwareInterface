@@ -109,6 +109,13 @@ def generate_launch_description():
         output='screen',
         arguments=['--ros-args', '--log-level', 'INFO']
     )
+    # delayed_hsh_node = RegisterEventHandler(
+    #     event_handler=OnProcessStart(
+    #         target_action=controller_manager,
+    #         on_start=[hsh_node],
+    #     )
+    # )
+    delayed_hsh_node = TimerAction(period=2.0, actions=[hsh_node])
     delayed_swerve_controller_spawner = RegisterEventHandler(
         event_handler=OnProcessStart(
             target_action=controller_manager,
@@ -121,5 +128,5 @@ def generate_launch_description():
     delayed_swerve_controller_spawner,
     delayed_joint_broad_spawner,
     # delayed_rviz,
-    hsh_node
+    delayed_hsh_node
 ])

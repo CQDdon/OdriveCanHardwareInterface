@@ -10,7 +10,7 @@ namespace odrive_can_interface
   {
     // ------INITIALIZE SHM ------
     RCLCPP_INFO(logger_, "Creating shared memory");
-    if (!shmitf_.open())
+    if (!shmitf_.open(true))
     {
       RCLCPP_ERROR(logger_, "Could not create shm interface");
       return hardware_interface::CallbackReturn::ERROR;
@@ -57,6 +57,7 @@ namespace odrive_can_interface
     command_pos_.assign(n, 0.0);
     command_vel_.assign(n, 0.0);
     joint_mode_.resize(n);
+    last_axis_action_.assign(n, ControlAction::None);
 
     // Suy ra mode từng joint theo command_interfaces trong URDF
     for (size_t i = 0; i < n; ++i)
@@ -198,8 +199,24 @@ namespace odrive_can_interface
     }
 
     HwiCommandIfBlock out = *cmd_if;
+    out.axis_count = static_cast<uint8_t>(
+        std::min(info_.joints.size(), static_cast<size_t>(SHM_MAX_AXES)));
+    out.sequence_id += 1;
 
-    for (size_t i = 0; i < SHM_MAX_AXES; ++i)
+    for (size_t i = 0; i < out.axis_count; ++i)
+    {
+      if (joint_mode_[i] == OdriveMotor::VELOCITY)
+      {
+        out.axes[i].interface = CommandInterface::Velocity;
+      }
+      else
+      {
+        out.axes[i].interface = CommandInterface::Position;
+      }
+      out.axes[i].value = 0.0f;
+    }
+
+    for (size_t i = out.axis_count; i < SHM_MAX_AXES; ++i)
     {
       out.axes[i].interface = CommandInterface::None;
       out.axes[i].value = 0.0f;
@@ -488,14 +505,35 @@ namespace odrive_can_interface
         }
 
         const HshControlBlock ctrl = *ctrl_ptr;
+        const auto *state_ptr = shmitf_.state();
         const size_t axis_count = std::min(
             static_cast<size_t>(ctrl.axis_count), motors_.size());
+        const size_t action_count = std::min(axis_count, last_axis_action_.size());
 
         for (size_t i = 0; i < axis_count; ++i)
         {
           const auto action = ctrl.axes[i].action;
-          if (!ctrl.motion_enable &&
-              (action == ControlAction::None || action == ControlAction::ClosedLoop))
+          if (state_ptr && !is_axis_online(state_ptr->axes[i]))
+          {
+            last_axis_action_[i] = ControlAction::None;
+            continue;
+          }
+          if (i < action_count)
+          {
+            if (action == ControlAction::Homing)
+            {
+              if (last_axis_action_[i] == ControlAction::Homing)
+              {
+                continue;
+              }
+              last_axis_action_[i] = action;
+            }
+            else
+            {
+              last_axis_action_[i] = action;
+            }
+          }
+          if (!ctrl.motion_enable && action == ControlAction::ClosedLoop)
           {
             (void)motors_[i]->idle();
             continue;
@@ -528,7 +566,6 @@ namespace odrive_can_interface
                ctrl.axes[i].action == ControlAction::ClosedLoop))
           {
             float val = static_cast<float>(ctrl.axes[i].target);
-            val = val / (2 * 3.141592);
             (void)motors_[i]->setTarget(val);
           }
         }

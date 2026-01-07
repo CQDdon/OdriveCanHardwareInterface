@@ -283,7 +283,7 @@ namespace odrive_can_interface
         SharedMemoryInterface(SharedMemoryInterface &&) noexcept = default;
         SharedMemoryInterface &operator=(SharedMemoryInterface &&) noexcept = default;
 
-        bool open();
+        bool open(bool clear_on_open = true);
         bool write_cmd_if(const HwiCommandIfBlock &command_if);
         bool write_state(const HwiStateBlock &state);
         bool write_state_debug(const HwiStateDebugBlock &state);

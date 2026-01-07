@@ -111,7 +111,7 @@ SharedMemoryInterface::~SharedMemoryInterface()
 	close();
 }
 
-bool SharedMemoryInterface::open()
+bool SharedMemoryInterface::open(bool clear_on_open)
 {
 	if (!cmd_if_segment_.open())
 	{
@@ -139,21 +139,24 @@ bool SharedMemoryInterface::open()
 		return false;
 	}
 
-	if (auto *cmd = cmd_if())
+	if (clear_on_open)
 	{
-		std::memset(cmd, 0, sizeof(HwiCommandIfBlock));
-	}
-	if (auto *st = state())
-	{
-		std::memset(st, 0, sizeof(HwiStateBlock));
-	}
-	if (auto *st_dbg = state_debug())
-	{
-		std::memset(st_dbg, 0, sizeof(HwiStateDebugBlock));
-	}
-	if (auto *ctrl = control())
-	{
-		std::memset(ctrl, 0, sizeof(HshControlBlock));
+		if (auto *cmd = cmd_if())
+		{
+			std::memset(cmd, 0, sizeof(HwiCommandIfBlock));
+		}
+		if (auto *st = state())
+		{
+			std::memset(st, 0, sizeof(HwiStateBlock));
+		}
+		if (auto *st_dbg = state_debug())
+		{
+			std::memset(st_dbg, 0, sizeof(HwiStateDebugBlock));
+		}
+		if (auto *ctrl = control())
+		{
+			std::memset(ctrl, 0, sizeof(HshControlBlock));
+		}
 	}
 	return true;
 }

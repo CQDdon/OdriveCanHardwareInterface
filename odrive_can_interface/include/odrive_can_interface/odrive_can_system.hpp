@@ -82,6 +82,7 @@ namespace odrive_can_interface
         std::vector<OdriveMotor::ControlMode> joint_mode_;
         std::vector<double> command_pos_;
         std::vector<double> command_vel_;
+        std::vector<ControlAction> last_axis_action_;
 
     // Shared memory 
         SharedMemoryInterface shmitf_;
@@ -111,4 +112,3 @@ namespace odrive_can_interface
 
 
 } // namespace odrive_can_interface
-

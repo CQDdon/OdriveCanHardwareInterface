@@ -170,6 +170,7 @@ namespace odrive_can_interface
   hardware_interface::CallbackReturn OdriveCANSystem::on_activate(
       const rclcpp_lifecycle::State &)
   {
+    deactivating_ = false;
     running_ = true;
 
     if (!shmitf_.ready())
@@ -251,6 +252,7 @@ namespace odrive_can_interface
   {
     RCLCPP_INFO(logger_, "Deactivating hardware interface...");
 
+    deactivating_ = true;
     running_ = false;
 
     if (can_receive_thread_.joinable())
@@ -492,7 +494,7 @@ namespace odrive_can_interface
     can_->startReceive();
 
     auto next_time = clock::now();
-    while (running_)
+    while (running_ || deactivating_)
     {
       next_time += TX_FRE;
       if (shmitf_.ready())
@@ -509,6 +511,19 @@ namespace odrive_can_interface
         const size_t axis_count = std::min(
             static_cast<size_t>(ctrl.axis_count), motors_.size());
         const size_t action_count = std::min(axis_count, last_axis_action_.size());
+
+        if (deactivating_)
+        {
+          for (size_t i = 0; i < axis_count; ++i)
+          {
+            (void)motors_[i]->idle();
+            last_axis_action_[i] = ControlAction::Idle;
+          }
+          deactivating_ = false;
+          running_ = false;
+          std::this_thread::sleep_until(next_time);
+          continue;
+        }
 
         for (size_t i = 0; i < axis_count; ++i)
         {

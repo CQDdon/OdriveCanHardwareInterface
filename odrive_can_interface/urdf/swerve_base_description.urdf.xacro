@@ -676,9 +676,7 @@
         <remapping>~/robot_description:=/robot_description</remapping>
       </ros>
       <robot_param>robot_description</robot_param>
-      <parameters>
-        /home/phuongdong/A-File/Work/BK_Robotics/Ros/Training/Project/SwerveBase_ws/install/swerve_controller/share/swerve_controller/config/swerve_controller.yaml
-      </parameters>    
+      <parameters>$(arg controller_config)</parameters>
     </plugin>
     <plugin filename="libignition-gazebo-joint-state-publisher-system.so" name="ignition::gazebo::systems::JointStatePublisher"/>
   </gazebo>-->

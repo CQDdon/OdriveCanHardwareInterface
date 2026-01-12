@@ -93,7 +93,6 @@ namespace odrive_can_interface
 
     // Control flag
         std::atomic<bool> running_{false};
-        std::atomic<bool> watch_dog_{false};
         std::atomic<bool> fatal_error_{false};
         std::atomic<bool> deactivating_{false};
         std::string last_error_;

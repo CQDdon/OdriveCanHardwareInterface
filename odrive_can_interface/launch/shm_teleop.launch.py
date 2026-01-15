@@ -81,7 +81,15 @@ def generate_launch_description():
         arguments=["joint_state_broadcaster", "--ros-args", "--log-level", "INFO"],
         output="screen",
     )
-    delayed_joint_broad_spawner = TimerAction(period=1.5, actions=[joint_broad_spawner])
+    imu_broad_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["imu_broadcaster", "--ros-args", "--log-level", "INFO"],
+        output="screen",
+    )
+    delayed_joint_broad_spawner = TimerAction(
+        period=1.5, actions=[joint_broad_spawner, imu_broad_spawner]
+    )
 
     hsh_node = Node(
         package="hardware_system_handler",

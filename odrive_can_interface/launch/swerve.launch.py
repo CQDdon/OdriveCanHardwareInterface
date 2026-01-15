@@ -93,11 +93,17 @@ def generate_launch_description():
         executable='spawner',
         arguments=["joint_state_broadcaster", '--ros-args', '--log-level', 'INFO'],
         output="screen",)
+
+    imu_broad_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=["imu_broadcaster", '--ros-args', '--log-level', 'INFO'],
+        output="screen",)
     
     delayed_joint_broad_spawner = RegisterEventHandler(
         event_handler=OnProcessStart(
             target_action=controller_manager,
-            on_start=[joint_broad_spawner],
+            on_start=[joint_broad_spawner, imu_broad_spawner],
         )
     )
 

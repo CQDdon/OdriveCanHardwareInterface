@@ -11,9 +11,11 @@
 constexpr const char *SHM_HWI_CMD_IF = "/hwi_to_hsh_cmd_if";
 constexpr const char *SHM_HWI_STATE = "/hwi_to_hsh_state"; // lite state
 constexpr const char *SHM_HWI_STATE_DEBUG = "/hwi_to_hsh_state_debug";
+constexpr const char *SHM_HWI_SENSOR_STATE = "/hwi_to_hsh_sensor_state";
 constexpr const char *SHM_HSH_CTRL = "/hsh_to_hwi_ctrl";
 
 constexpr size_t SHM_MAX_AXES = 8;
+constexpr size_t SHM_MAX_SENSORS = 8;
 
 // Controller command interface type.
 enum class CommandInterface : uint8_t
@@ -51,6 +53,25 @@ enum class AxisStateSummary : uint8_t
     Calibrating = 3,
     Homing = 4,
     Running = 5
+};
+
+enum class SensorType : uint8_t
+{
+    Unknown = 0,
+    Imu = 1,
+    Encoder = 2,
+    Sensor_3 = 3,
+    Sensor_4 = 4,
+    Sensor_5 = 5,
+    Sensor_6 = 6,
+    Sensor_7 = 7
+};
+
+enum class SensorStatus : uint8_t
+{
+    Init = 0,
+    Active = 1,
+    Error = 2
 };
 
 struct AxisFeedbackLite
@@ -162,6 +183,46 @@ struct HwiStateDebugBlock
         for (auto &axis : axes)
         {
             axis = {};
+        }
+    }
+};
+
+struct SensorState
+{
+    uint8_t sensor_id;
+    SensorType type;
+    SensorStatus status;
+    uint8_t online;
+    uint8_t reserved_u8_0;
+    float values[10];
+
+    SensorState()
+        : sensor_id(0), type(SensorType::Unknown), status(SensorStatus::Init),
+          online(0), reserved_u8_0(0)
+    {
+        for (auto &value : values)
+        {
+            value = 0.0f;
+        }
+    }
+};
+
+struct HwiSensorStateBlock
+{
+    uint64_t timestamp_ns;
+    uint32_t sequence_id;
+    uint16_t reserved_u16_0;
+    uint8_t sensor_count;
+    uint8_t reserved_u8_0;
+    SensorState sensors[SHM_MAX_SENSORS];
+
+    HwiSensorStateBlock()
+        : timestamp_ns(0), sequence_id(0), reserved_u16_0(0),
+          sensor_count(0), reserved_u8_0(0)
+    {
+        for (auto &sensor : sensors)
+        {
+            sensor = {};
         }
     }
 };
@@ -287,6 +348,7 @@ namespace odrive_can_interface
         bool write_cmd_if(const HwiCommandIfBlock &command_if);
         bool write_state(const HwiStateBlock &state);
         bool write_state_debug(const HwiStateDebugBlock &state);
+        bool write_sensor_state(const HwiSensorStateBlock &state);
         bool write_control(const HshControlBlock &control);
         void close();
         bool ready() const noexcept;
@@ -294,16 +356,19 @@ namespace odrive_can_interface
         HwiCommandIfBlock *cmd_if() noexcept;
         HwiStateBlock *state() noexcept;
         HwiStateDebugBlock *state_debug() noexcept;
+        HwiSensorStateBlock *sensor_state() noexcept;
         HshControlBlock *control() noexcept;
         const HwiCommandIfBlock *cmd_if() const noexcept;
         const HwiStateBlock *state() const noexcept;
         const HwiStateDebugBlock *state_debug() const noexcept;
+        const HwiSensorStateBlock *sensor_state() const noexcept;
         const HshControlBlock *control() const noexcept;
 
     private:
         SharedMemorySegment cmd_if_segment_{SHM_HWI_CMD_IF, sizeof(HwiCommandIfBlock)};
         SharedMemorySegment state_segment_{SHM_HWI_STATE, sizeof(HwiStateBlock)};
         SharedMemorySegment state_debug_segment_{SHM_HWI_STATE_DEBUG, sizeof(HwiStateDebugBlock)};
+        SharedMemorySegment sensor_state_segment_{SHM_HWI_SENSOR_STATE, sizeof(HwiSensorStateBlock)};
         SharedMemorySegment control_segment_{SHM_HSH_CTRL, sizeof(HshControlBlock)};
     };
 

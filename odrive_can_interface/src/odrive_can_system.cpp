@@ -247,7 +247,7 @@ namespace odrive_can_interface
       const rclcpp_lifecycle::State &)
   {
     RCLCPP_INFO(logger_, "Deactivating hardware interface...");
-
+    shmitf_.close();
     deactivating_ = true;
     running_ = false;
 

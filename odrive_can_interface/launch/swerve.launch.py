@@ -19,8 +19,9 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import ExecuteProcess
-from launch.actions import IncludeLaunchDescription, TimerAction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
 from launch.substitutions import Command, LaunchConfiguration
+from launch.conditions import IfCondition, UnlessCondition
 from launch.actions import RegisterEventHandler
 from launch.event_handlers import OnProcessStart
 from launch_ros.parameter_descriptions import ParameterValue
@@ -28,6 +29,11 @@ import xacro
 
 
 def generate_launch_description():
+    use_teleop = DeclareLaunchArgument(
+        "use_teleop",
+        default_value="false",
+        description="Skip swerve_controller spawn when true",
+    )
     # Package configuration
     package_description = "odrive_can_interface"
     package_directory = get_package_share_directory(package_description)
@@ -87,11 +93,17 @@ def generate_launch_description():
         executable='spawner',
         arguments=["joint_state_broadcaster", '--ros-args', '--log-level', 'INFO'],
         output="screen",)
+
+    imu_broad_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=["imu_broadcaster", '--ros-args', '--log-level', 'INFO'],
+        output="screen",)
     
     delayed_joint_broad_spawner = RegisterEventHandler(
         event_handler=OnProcessStart(
             target_action=controller_manager,
-            on_start=[joint_broad_spawner],
+            on_start=[joint_broad_spawner, imu_broad_spawner],
         )
     )
 
@@ -109,17 +121,26 @@ def generate_launch_description():
         output='screen',
         arguments=['--ros-args', '--log-level', 'INFO']
     )
+    # delayed_hsh_node = RegisterEventHandler(
+    #     event_handler=OnProcessStart(
+    #         target_action=controller_manager,
+    #         on_start=[hsh_node],
+    #     )
+    # )
+    delayed_hsh_node = TimerAction(period=2.0, actions=[hsh_node])
     delayed_swerve_controller_spawner = RegisterEventHandler(
+        condition=UnlessCondition(LaunchConfiguration("use_teleop")),
         event_handler=OnProcessStart(
             target_action=controller_manager,
             on_start=[swerve_controller_spawner],
         )
     )
     return LaunchDescription([
+    use_teleop,
     rsp,
     delayed_controller_manager,
     delayed_swerve_controller_spawner,
     delayed_joint_broad_spawner,
     # delayed_rviz,
-    hsh_node
+    delayed_hsh_node
 ])

@@ -111,7 +111,7 @@ SharedMemoryInterface::~SharedMemoryInterface()
 	close();
 }
 
-bool SharedMemoryInterface::open()
+bool SharedMemoryInterface::open(bool clear_on_open)
 {
 	if (!cmd_if_segment_.open())
 	{
@@ -124,24 +124,52 @@ bool SharedMemoryInterface::open()
 		return false;
 	}
 
-	if (!control_segment_.open())
+	if (!state_debug_segment_.open())
 	{
 		cmd_if_segment_.close();
 		state_segment_.close();
 		return false;
 	}
 
-	if (auto *cmd = cmd_if())
+	if (!sensor_state_segment_.open())
 	{
-		std::memset(cmd, 0, sizeof(HwiCommandIfBlock));
+		cmd_if_segment_.close();
+		state_segment_.close();
+		state_debug_segment_.close();
+		return false;
 	}
-	if (auto *st = state())
+
+	if (!control_segment_.open())
 	{
-		std::memset(st, 0, sizeof(HwiStateBlock));
+		cmd_if_segment_.close();
+		state_segment_.close();
+		state_debug_segment_.close();
+		sensor_state_segment_.close();
+		return false;
 	}
-	if (auto *ctrl = control())
+
+	if (clear_on_open)
 	{
-		std::memset(ctrl, 0, sizeof(HshControlBlock));
+		if (auto *cmd = cmd_if())
+		{
+			std::memset(cmd, 0, sizeof(HwiCommandIfBlock));
+		}
+		if (auto *st = state())
+		{
+			std::memset(st, 0, sizeof(HwiStateBlock));
+		}
+		if (auto *st_dbg = state_debug())
+		{
+			std::memset(st_dbg, 0, sizeof(HwiStateDebugBlock));
+		}
+		if (auto *sensor_st = sensor_state())
+		{
+			std::memset(sensor_st, 0, sizeof(HwiSensorStateBlock));
+		}
+		if (auto *ctrl = control())
+		{
+			std::memset(ctrl, 0, sizeof(HshControlBlock));
+		}
 	}
 	return true;
 }
@@ -163,6 +191,52 @@ bool SharedMemoryInterface::write_state(const HwiStateBlock &state_data)
 	if (msync(st, sizeof(HwiStateBlock), MS_SYNC) != 0)
 	{
 		std::fprintf(stderr, "ERROR: failed to msync state segment, errno=%s\n", std::strerror(errno));
+		return false;
+	}
+
+	return true;
+}
+
+bool SharedMemoryInterface::write_state_debug(const HwiStateDebugBlock &state_data)
+{
+	if (!ready())
+	{
+		return false;
+	}
+
+	HwiStateDebugBlock *st = state_debug();
+	if (!st)
+	{
+		return false;
+	}
+
+	std::memcpy(st, &state_data, sizeof(HwiStateDebugBlock));
+	if (msync(st, sizeof(HwiStateDebugBlock), MS_SYNC) != 0)
+	{
+		std::fprintf(stderr, "ERROR: failed to msync state_debug segment, errno=%s\n", std::strerror(errno));
+		return false;
+	}
+
+	return true;
+}
+
+bool SharedMemoryInterface::write_sensor_state(const HwiSensorStateBlock &state_data)
+{
+	if (!ready())
+	{
+		return false;
+	}
+
+	HwiSensorStateBlock *st = sensor_state();
+	if (!st)
+	{
+		return false;
+	}
+
+	std::memcpy(st, &state_data, sizeof(HwiSensorStateBlock));
+	if (msync(st, sizeof(HwiSensorStateBlock), MS_SYNC) != 0)
+	{
+		std::fprintf(stderr, "ERROR: failed to msync sensor_state segment, errno=%s\n", std::strerror(errno));
 		return false;
 	}
 
@@ -219,12 +293,16 @@ void SharedMemoryInterface::close()
 {
 	cmd_if_segment_.close();
 	state_segment_.close();
+	state_debug_segment_.close();
+	sensor_state_segment_.close();
 	control_segment_.close();
 }
 
 bool SharedMemoryInterface::ready() const noexcept
 {
-	return cmd_if_segment_.is_open() && state_segment_.is_open() && control_segment_.is_open();
+	return cmd_if_segment_.is_open() && state_segment_.is_open() &&
+	       state_debug_segment_.is_open() && sensor_state_segment_.is_open() &&
+	       control_segment_.is_open();
 }
 
 HwiCommandIfBlock *SharedMemoryInterface::cmd_if() noexcept
@@ -245,6 +323,26 @@ HwiStateBlock *SharedMemoryInterface::state() noexcept
 const HwiStateBlock *SharedMemoryInterface::state() const noexcept
 {
 	return state_segment_.as<const HwiStateBlock>();
+}
+
+HwiStateDebugBlock *SharedMemoryInterface::state_debug() noexcept
+{
+	return state_debug_segment_.as<HwiStateDebugBlock>();
+}
+
+const HwiStateDebugBlock *SharedMemoryInterface::state_debug() const noexcept
+{
+	return state_debug_segment_.as<const HwiStateDebugBlock>();
+}
+
+HwiSensorStateBlock *SharedMemoryInterface::sensor_state() noexcept
+{
+	return sensor_state_segment_.as<HwiSensorStateBlock>();
+}
+
+const HwiSensorStateBlock *SharedMemoryInterface::sensor_state() const noexcept
+{
+	return sensor_state_segment_.as<const HwiSensorStateBlock>();
 }
 
 HshControlBlock *SharedMemoryInterface::control() noexcept

@@ -33,9 +33,9 @@ public:
     bool getFeedback(float &pos, float &vel) const;
     bool getStatus(uint32_t &axis_err,
                    uint8_t &axis_state,
-                   uint8_t &motor_err,
-                   uint8_t &encoder_err,
-                   uint8_t &controller_err,
+                   uint64_t &motor_err,
+                   uint32_t &encoder_err,
+                   uint32_t &controller_err,
                    uint8_t &trajectory_done,
                    uint64_t &last_hb_ts) const;
     float getVelocity() const;
@@ -166,9 +166,6 @@ private:
     uint32_t encoder_error_{0};
     uint32_t controller_error_{0};
     bool traj_done_{false};
-    uint8_t motor_error_flag_{0};
-    uint8_t encoder_error_flag_{0};
-    uint8_t controller_error_flag_{0};
     uint64_t last_hb_timestamp_ns_{0};
 };
 

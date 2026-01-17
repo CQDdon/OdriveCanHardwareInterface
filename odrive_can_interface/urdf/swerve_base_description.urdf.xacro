@@ -52,7 +52,22 @@
         <child link="SwerveBase_Link" />
         <origin xyz="0 0 0.05" rpy="0 0 0"/>
   </joint>
-    
+
+  <link name="encoder_x_link"/>
+  <link name="encoder_y_link"/>
+
+  <joint name="encoder_x_joint" type="fixed">
+    <parent link="SwerveBase_Link"/>
+    <child link="encoder_x_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <joint name="encoder_y_joint" type="fixed">
+    <parent link="SwerveBase_Link"/>
+    <child link="encoder_y_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
   <link
     name="FrontDriver_Link">
     <inertial>
@@ -669,6 +684,43 @@
     </joint>
   </ros2_control>
 
+  <ros2_control name="SensorCAN" type="system">
+    <hardware>
+        <plugin>sensor_can_interface/SensorCANSystem</plugin>
+        <param name="can_port">can1</param>
+        <param name="start_rate_hz">200</param>
+        <param name="reset_on_start">false</param>
+        <param name="imu_sensor_id">0</param>
+        <param name="encoder_sensor_id">1</param>
+        <param name="imu_angle_scale">1.0</param>
+        <param name="encoder_x_joint">encoder_x_joint</param>
+        <param name="encoder_y_joint">encoder_y_joint</param>
+        <param name="imu_sensor_name">imu</param>
+    </hardware>
+
+    <joint name="encoder_x_joint">
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="encoder_y_joint">
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+
+    <sensor name="imu">
+      <state_interface name="orientation.x"/>
+      <state_interface name="orientation.y"/>
+      <state_interface name="orientation.z"/>
+      <state_interface name="orientation.w"/>
+      <state_interface name="angular_velocity.x"/>
+      <state_interface name="angular_velocity.y"/>
+      <state_interface name="angular_velocity.z"/>
+      <state_interface name="linear_acceleration.x"/>
+      <state_interface name="linear_acceleration.y"/>
+      <state_interface name="linear_acceleration.z"/>
+    </sensor>
+  </ros2_control>
+
    <!--<gazebo>
     <plugin filename="libgz_ros2_control-system.so" name="gz_ros2_control::GazeboSimROS2ControlPlugin">      
       <ros>
@@ -676,9 +728,7 @@
         <remapping>~/robot_description:=/robot_description</remapping>
       </ros>
       <robot_param>robot_description</robot_param>
-      <parameters>
-        /home/phuongdong/A-File/Work/BK_Robotics/Ros/Training/Project/SwerveBase_ws/install/swerve_controller/share/swerve_controller/config/swerve_controller.yaml
-      </parameters>    
+      <parameters>$(arg controller_config)</parameters>
     </plugin>
     <plugin filename="libignition-gazebo-joint-state-publisher-system.so" name="ignition::gazebo::systems::JointStatePublisher"/>
   </gazebo>-->

@@ -115,18 +115,18 @@ bool OdriveMotor::getFeedback(float &pos, float &vel) const
 
 bool OdriveMotor::getStatus(uint32_t &axis_err,
                             uint8_t &axis_state,
-                            uint8_t &motor_err,
-                            uint8_t &encoder_err,
-                            uint8_t &controller_err,
+                            uint64_t &motor_err,
+                            uint32_t &encoder_err,
+                            uint32_t &controller_err,
                             uint8_t &trajectory_done,
                             uint64_t &last_hb_ts) const
 {
     lock_guard<mutex> lk(mtx_);
     axis_err = axis_error_;
     axis_state = static_cast<uint8_t>(axis_state_);
-    motor_err = motor_error_flag_;
-    encoder_err = encoder_error_flag_;
-    controller_err = controller_error_flag_;
+    motor_err = motor_error_;
+    encoder_err = encoder_error_;
+    controller_err = controller_error_;
     trajectory_done = traj_done_ ? 1 : 0;
     last_hb_ts = last_hb_timestamp_ns_;
     return true;
@@ -173,9 +173,6 @@ void OdriveMotor::onCanFeedback(uint32_t frame_id, const uint8_t *data, uint8_t 
         {
             uint32_t axis_error = 0;
             uint8_t axis_state = data[4];
-            uint8_t motor_err_flag = data[5];
-            uint8_t encoder_err_flag = data[6];
-            uint8_t controller_err_flag = data[7] & 0x7F; // lower 7 bits
             bool traj_done = (data[7] & 0x80) != 0;       // bit7
 
             std::memcpy(&axis_error, data + 0, 4);
@@ -183,9 +180,6 @@ void OdriveMotor::onCanFeedback(uint32_t frame_id, const uint8_t *data, uint8_t 
             std::lock_guard<std::mutex> lk(mtx_);
             axis_error_ = axis_error;
             axis_state_ = axis_state;
-            motor_error_flag_ = motor_err_flag;
-            encoder_error_flag_ = encoder_err_flag;
-            controller_error_flag_ = controller_err_flag;
             traj_done_ = traj_done;
             last_hb_timestamp_ns_ = static_cast<uint64_t>(now_ns);
         }

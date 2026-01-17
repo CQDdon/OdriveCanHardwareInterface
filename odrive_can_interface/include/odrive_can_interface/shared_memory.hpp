@@ -9,20 +9,13 @@
 
 // Shared memory names.
 constexpr const char *SHM_HWI_CMD_IF = "/hwi_to_hsh_cmd_if";
-constexpr const char *SHM_HWI_STATE = "/hwi_to_hsh_state";
+constexpr const char *SHM_HWI_STATE = "/hwi_to_hsh_state"; // lite state
+constexpr const char *SHM_HWI_STATE_DEBUG = "/hwi_to_hsh_state_debug";
+constexpr const char *SHM_HWI_SENSOR_STATE = "/hwi_to_hsh_sensor_state";
 constexpr const char *SHM_HSH_CTRL = "/hsh_to_hwi_ctrl";
 
 constexpr size_t SHM_MAX_AXES = 8;
-
-// HWI system state used by HSH/FSM.
-enum class SystemState : uint8_t
-{
-    OnConfigure = 0,
-    Idle = 1,
-    ClosedLoop = 2,
-    Calib = 3, 
-    Error = 4,
-};
+constexpr size_t SHM_MAX_SENSORS = 8;
 
 // Controller command interface type.
 enum class CommandInterface : uint8_t
@@ -51,50 +44,120 @@ enum class SafetyAction : uint8_t
     Emergency = 2
 };
 
-struct AxisFeedback
+// Compact axis state summary derived from ODrive AxisState.
+enum class AxisStateSummary : uint8_t
+{
+    Unknown = 0,
+    Idle = 1,
+    Startup = 2,
+    Calibrating = 3,
+    Homing = 4,
+    Running = 5
+};
+
+enum class SensorType : uint8_t
+{
+    Unknown = 0,
+    Imu = 1,
+    Encoder = 2,
+    Sensor_3 = 3,
+    Sensor_4 = 4,
+    Sensor_5 = 5,
+    Sensor_6 = 6,
+    Sensor_7 = 7
+};
+
+enum class SensorStatus : uint8_t
+{
+    Init = 0,
+    Active = 1,
+    Error = 2
+};
+
+struct AxisFeedbackLite
 {
     uint32_t can_id;
-    uint32_t error;        // ODrive error (bitmask)
-    uint32_t odrive_state; // ODrive state (IDLE, CLOSED_LOOP, ...)
-    uint8_t motor_error_flag;      // From heartbeat
-    uint8_t encoder_error_flag;    // From heartbeat
-    uint8_t controller_error_flag; // From heartbeat
+    uint32_t error;    
+    uint16_t reserved_u16_0;
+    uint8_t online;
+    uint8_t reserved_u8_0;
+    AxisStateSummary odrive_state_summary;
+
+    float position; // rad
+    float velocity; // rad/s
+
+    AxisFeedbackLite()
+        : can_id(0), odrive_state_summary(AxisStateSummary::Unknown), error(0),
+          online(0), reserved_u8_0(0), reserved_u16_0(0),
+          position(0.0f), velocity(0.0f)
+    {
+    }
+};
+
+struct AxisFeedbackDebug
+{
+    uint64_t last_hb_timestamp_ns;
+    uint32_t axis_error;
+    uint32_t motor_error;
+    uint32_t encoder_error;
+    uint32_t controller_error;
+    uint16_t reserved_u16_0;
+    uint8_t odrive_state;          // Raw AxisState from heartbeat
     uint8_t trajectory_done_flag;  // From heartbeat (bit)
 
-    float position; // rad or deg (decide one)
-    float velocity; // rad/s or m/s
-    uint64_t last_hb_timestamp_ns;
 
-    AxisFeedback()
-        : can_id(0), error(0), odrive_state(0), motor_error_flag(0),
-          encoder_error_flag(0), controller_error_flag(0),
-          trajectory_done_flag(0), position(0.0f), velocity(0.0f),
+    AxisFeedbackDebug()
+        : axis_error(0), odrive_state(0), trajectory_done_flag(0), reserved_u16_0(0),
+          motor_error(0), encoder_error(0), controller_error(0),
           last_hb_timestamp_ns(0)
     {
     }
 };
 
-// Helper: axis online check based on heartbeat timestamp and timeout
-inline bool is_axis_online(const AxisFeedback &ax, uint64_t now_ns, uint64_t timeout_ns)
+inline bool is_axis_online(const AxisFeedbackLite &ax)
 {
-    if (ax.last_hb_timestamp_ns == 0)
-        return false;
-    return (now_ns - ax.last_hb_timestamp_ns) <= timeout_ns;
+    return ax.online != 0;
+}
+
+// Map ODrive AxisState to a compact summary used by HSH.
+inline AxisStateSummary map_odrive_axis_state_summary(uint8_t axis_state)
+{
+    switch (axis_state)
+    {
+    case 1:  // IDLE
+        return AxisStateSummary::Idle;
+    case 2:  // STARTUP_SEQUENCE
+        return AxisStateSummary::Startup;
+    case 3:  // FULL_CALIBRATION_SEQUENCE
+    case 4:  // MOTOR_CALIBRATION
+    case 6:  // ENCODER_INDEX_SEARCH
+    case 7:  // ENCODER_OFFSET_CALIBRATION
+    case 10: // ENCODER_DIR_FIND
+    case 12: // ENCODER_HALL_POLARITY_CALIBRATION
+    case 13: // ENCODER_HALL_PHASE_CALIBRATION
+        return AxisStateSummary::Calibrating;
+    case 11: // HOMING
+        return AxisStateSummary::Homing;
+    case 8:  // CLOSED_LOOP_CONTROL
+    case 9:  // LOCKIN_SPIN
+        return AxisStateSummary::Running;
+    case 0:  // UNDEFINED
+    default:
+        return AxisStateSummary::Unknown;
+    }
 }
 
 struct HwiStateBlock
 {
-    SystemState system_state;
-    uint32_t sequence_id;
     uint64_t timestamp_ns;
-    uint8_t axis_count;
-    uint8_t reserved_u8_1;
+    uint32_t sequence_id;
     uint16_t reserved_u16_1;
-    AxisFeedback axes[SHM_MAX_AXES];
+    uint8_t reserved_u8_1;
+    uint8_t axis_count;
+    AxisFeedbackLite axes[SHM_MAX_AXES];
 
     HwiStateBlock()
-        : system_state(SystemState::Idle),
-          sequence_id(0), timestamp_ns(0), axis_count(0),
+        : sequence_id(0), timestamp_ns(0), axis_count(0),
           reserved_u8_1(0), reserved_u16_1(0)
     {
         for (auto &axis : axes)
@@ -104,12 +167,72 @@ struct HwiStateBlock
     }
 };
 
+struct HwiStateDebugBlock
+{
+    uint64_t timestamp_ns;
+    uint32_t sequence_id;
+    uint16_t reserved_u16_0;
+    uint8_t axis_count;
+    uint8_t reserved_u8_0;
+    AxisFeedbackDebug axes[SHM_MAX_AXES];
+
+    HwiStateDebugBlock()
+        : sequence_id(0), timestamp_ns(0), axis_count(0),
+          reserved_u8_0(0), reserved_u16_0(0)
+    {
+        for (auto &axis : axes)
+        {
+            axis = {};
+        }
+    }
+};
+
+struct SensorState
+{
+    uint8_t sensor_id;
+    SensorType type;
+    SensorStatus status;
+    uint8_t online;
+    uint8_t reserved_u8_0;
+    float values[10];
+
+    SensorState()
+        : sensor_id(0), type(SensorType::Unknown), status(SensorStatus::Init),
+          online(0), reserved_u8_0(0)
+    {
+        for (auto &value : values)
+        {
+            value = 0.0f;
+        }
+    }
+};
+
+struct HwiSensorStateBlock
+{
+    uint64_t timestamp_ns;
+    uint32_t sequence_id;
+    uint16_t reserved_u16_0;
+    uint8_t sensor_count;
+    uint8_t reserved_u8_0;
+    SensorState sensors[SHM_MAX_SENSORS];
+
+    HwiSensorStateBlock()
+        : timestamp_ns(0), sequence_id(0), reserved_u16_0(0),
+          sensor_count(0), reserved_u8_0(0)
+    {
+        for (auto &sensor : sensors)
+        {
+            sensor = {};
+        }
+    }
+};
+
 struct AxisCommandIf
 {
-    CommandInterface interface;
-    uint8_t reserved_u8_0;
-    uint16_t reserved_u16_0;
     float value;
+    uint16_t reserved_u16_0;
+    uint8_t reserved_u8_0;
+    CommandInterface interface;
 
     AxisCommandIf()
         : interface(CommandInterface::None),
@@ -120,11 +243,11 @@ struct AxisCommandIf
 
 struct HwiCommandIfBlock
 {
-    uint32_t sequence_id;
     uint64_t timestamp_ns;
-    uint8_t axis_count;
-    uint8_t reserved_u8_0;
+    uint32_t sequence_id;
     uint16_t reserved_u16_0;
+    uint8_t reserved_u8_0;
+    uint8_t axis_count;
     AxisCommandIf axes[SHM_MAX_AXES];
 
     HwiCommandIfBlock()
@@ -140,10 +263,10 @@ struct HwiCommandIfBlock
 
 struct AxisControl
 {
-    ControlAction action;
-    uint8_t reserved_u8_0;
-    uint16_t reserved_u16_0;
     float target;
+    uint16_t reserved_u16_0;
+    uint8_t reserved_u8_0;
+    ControlAction action;
 
     AxisControl()
         : action(ControlAction::None), reserved_u8_0(0),
@@ -154,17 +277,17 @@ struct AxisControl
 
 struct HshControlBlock
 {
-    uint32_t sequence_id;
     uint64_t timestamp_ns;
+    uint32_t sequence_id;
     uint8_t axis_count;
     uint8_t motion_enable;
     SafetyAction safety_action;
-    uint8_t reserved_u8_0;
+    uint8_t debug_enable;
     AxisControl axes[SHM_MAX_AXES];
 
     HshControlBlock()
         : sequence_id(0), timestamp_ns(0), axis_count(0), motion_enable(0),
-          safety_action(SafetyAction::None), reserved_u8_0(0)
+          safety_action(SafetyAction::None), debug_enable(0)
     {
         for (auto &axis : axes)
         {
@@ -221,23 +344,31 @@ namespace odrive_can_interface
         SharedMemoryInterface(SharedMemoryInterface &&) noexcept = default;
         SharedMemoryInterface &operator=(SharedMemoryInterface &&) noexcept = default;
 
-        bool open();
+        bool open(bool clear_on_open = true);
         bool write_cmd_if(const HwiCommandIfBlock &command_if);
         bool write_state(const HwiStateBlock &state);
+        bool write_state_debug(const HwiStateDebugBlock &state);
+        bool write_sensor_state(const HwiSensorStateBlock &state);
         bool write_control(const HshControlBlock &control);
         void close();
         bool ready() const noexcept;
 
         HwiCommandIfBlock *cmd_if() noexcept;
         HwiStateBlock *state() noexcept;
+        HwiStateDebugBlock *state_debug() noexcept;
+        HwiSensorStateBlock *sensor_state() noexcept;
         HshControlBlock *control() noexcept;
         const HwiCommandIfBlock *cmd_if() const noexcept;
         const HwiStateBlock *state() const noexcept;
+        const HwiStateDebugBlock *state_debug() const noexcept;
+        const HwiSensorStateBlock *sensor_state() const noexcept;
         const HshControlBlock *control() const noexcept;
 
     private:
         SharedMemorySegment cmd_if_segment_{SHM_HWI_CMD_IF, sizeof(HwiCommandIfBlock)};
         SharedMemorySegment state_segment_{SHM_HWI_STATE, sizeof(HwiStateBlock)};
+        SharedMemorySegment state_debug_segment_{SHM_HWI_STATE_DEBUG, sizeof(HwiStateDebugBlock)};
+        SharedMemorySegment sensor_state_segment_{SHM_HWI_SENSOR_STATE, sizeof(HwiSensorStateBlock)};
         SharedMemorySegment control_segment_{SHM_HSH_CTRL, sizeof(HshControlBlock)};
     };
 

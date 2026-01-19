@@ -150,9 +150,7 @@ void CANInterface::receiveLoop()
         const int fd = socketFdSnapshot();
         if (fd < 0)
         {
-            if (!reopenSocket())
-                return;
-            continue;
+            return;
         }
 
         struct pollfd pfd;
@@ -164,9 +162,7 @@ void CANInterface::receiveLoop()
             if (errno == EINTR)
                 continue;
             cerr << "Error: CAN poll failed (" << errno << ": " << strerror(errno) << "). Reopening..." << endl;
-            if (!reopenSocket())
-                return;
-            continue;
+            return;
         }
         if (poll_ret == 0 || !(pfd.revents & POLLIN))
         {
@@ -184,9 +180,7 @@ void CANInterface::receiveLoop()
                 if (errno == EAGAIN || errno == EWOULDBLOCK)
                     break;
                 cerr << "Error: CAN read failed (" << errno << ": " << strerror(errno) << "). Reopening..." << endl;
-                if (!reopenSocket())
-                    return;
-                continue;
+                return;
             }
             if (nbytes < static_cast<int>(sizeof(frame)))
             {

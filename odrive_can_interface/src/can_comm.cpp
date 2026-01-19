@@ -4,6 +4,9 @@
 #include <unordered_map>
 #include <fcntl.h>
 #include <poll.h>
+#include <chrono>
+#include <thread>
+#include <algorithm>
 
 using namespace std;
 
@@ -12,6 +15,7 @@ CANInterface::CANInterface() : can_socket_(-1) {}
 CANInterface::~CANInterface()
 {
     stopReceive();
+    stopTransmit();
     if (can_socket_ >= 0)
     {
         close(can_socket_);
@@ -22,12 +26,23 @@ CANInterface::~CANInterface()
 bool CANInterface::openInterface(const string &interface)
 {
     stopReceive();
+    stopTransmit();
     if (can_socket_ >= 0)
     {
         close(can_socket_);
         can_socket_ = -1;
     }
 
+    interface_name_ = interface;
+    if (!openSocket(interface_name_))
+        return false;
+    startTransmit();
+    return true;
+}
+
+bool CANInterface::openSocket(const string &interface)
+{
+    std::lock_guard<std::mutex> lk(socket_mutex_);
     can_socket_ = socket(PF_CAN, SOCK_RAW, CAN_RAW);
     if (can_socket_ < 0)
     {
@@ -47,6 +62,10 @@ bool CANInterface::openInterface(const string &interface)
 
     int recv_own = 0;
     (void)setsockopt(can_socket_, SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS, &recv_own, sizeof(recv_own));
+    int snd_buf = 1 << 20;
+    int rcv_buf = 1 << 20;
+    (void)setsockopt(can_socket_, SOL_SOCKET, SO_SNDBUF, &snd_buf, sizeof(snd_buf));
+    (void)setsockopt(can_socket_, SOL_SOCKET, SO_RCVBUF, &rcv_buf, sizeof(rcv_buf));
 
     struct sockaddr_can addr;
     memset(&addr, 0, sizeof(addr));
@@ -91,34 +110,23 @@ bool CANInterface::sendFrame(uint32_t frame_id, const vector<uint8_t> &data)
         return false;
     }
 
-    struct can_frame frame{};
-    frame.can_id = frame_id & CAN_SFF_MASK; // 11bit
-    frame.can_dlc = data.size();
-    memset(frame.data, 0, sizeof(frame.data));
+    TxFrame frame{};
+    frame.id = frame_id & CAN_SFF_MASK;
+    frame.dlc = static_cast<uint8_t>(data.size());
     if (!data.empty())
     {
-        std::memcpy(frame.data, data.data(), data.size());
+        std::copy_n(data.begin(), frame.dlc, frame.data.begin());
     }
 
-    const int nbytes = write(can_socket_, &frame, sizeof(frame));
-    if (nbytes != static_cast<int>(sizeof(frame)))
     {
-        cerr << "Error: Failed to send CAN frame." << endl;
-        cerr << "  Socket: " << can_socket_ << endl;
-        cerr << "  Frame ID: 0x" << hex << frame_id << dec << endl;
-        cerr << "  Expected bytes: " << sizeof(frame) << endl;
-        cerr << "  Actual bytes written: " << nbytes << endl;
-        cerr << "  errno: " << errno << " (" << strerror(errno) << ")" << endl;
-        return false;
+        std::lock_guard<std::mutex> lk(tx_mutex_);
+        if (tx_queue_.size() >= kTxQueueMax)
+        {
+            tx_queue_.pop_front();
+        }
+        tx_queue_.push_back(frame);
     }
-
-    cout << "Sent CAN frame: ID=0x" << hex << frame_id << dec
-         << ", Data=";
-    for (size_t i = 0; i < data.size(); ++i)
-    {
-        cout << hex << static_cast<int>(data[i]) << " ";
-    }
-    cout << dec << endl;
+    tx_cv_.notify_one();
     return true;
 }
 
@@ -139,15 +147,26 @@ void CANInterface::receiveLoop()
     std::unordered_map<uint32_t, struct can_frame> latest_frames;
     while (receiving_)
     {
+        const int fd = socketFdSnapshot();
+        if (fd < 0)
+        {
+            if (!reopenSocket())
+                return;
+            continue;
+        }
+
         struct pollfd pfd;
-        pfd.fd = can_socket_;
+        pfd.fd = fd;
         pfd.events = POLLIN;
         const int poll_ret = poll(&pfd, 1, 10);
         if (poll_ret < 0)
         {
             if (errno == EINTR)
                 continue;
-            break;
+            cerr << "Error: CAN poll failed (" << errno << ": " << strerror(errno) << "). Reopening..." << endl;
+            if (!reopenSocket())
+                return;
+            continue;
         }
         if (poll_ret == 0 || !(pfd.revents & POLLIN))
         {
@@ -157,21 +176,25 @@ void CANInterface::receiveLoop()
         latest_frames.clear();
         while (true)
         {
-            int nbytes = read(can_socket_, &frame, sizeof(frame));
+            const int nbytes = read(fd, &frame, sizeof(frame));
             if (nbytes < 0)
             {
                 if (errno == EINTR)
                     continue;
                 if (errno == EAGAIN || errno == EWOULDBLOCK)
                     break;
-                return;
+                cerr << "Error: CAN read failed (" << errno << ": " << strerror(errno) << "). Reopening..." << endl;
+                if (!reopenSocket())
+                    return;
+                continue;
             }
             if (nbytes < static_cast<int>(sizeof(frame)))
             {
                 cerr << "Error: Incomplete CAN frame received." << endl;
                 continue;
             }
-            latest_frames[frame.can_id] = frame;
+            const uint32_t can_id = frame.can_id & CAN_SFF_MASK;
+            latest_frames[can_id] = frame;
         }
 
         if (!callback_)
@@ -181,10 +204,11 @@ void CANInterface::receiveLoop()
 
         for (const auto &item : latest_frames)
         {
+            const uint32_t can_id = item.first;
             const auto &frm = item.second;
             uint8_t data[8];
             memcpy(data, frm.data, frm.can_dlc);
-            callback_(frm.can_id, data, frm.can_dlc);
+            callback_(can_id, data, frm.can_dlc);
         }
     }
 }
@@ -205,4 +229,128 @@ void CANInterface::stopReceive()
         shutdown(can_socket_, SHUT_RD);
     if (receive_thread_.joinable())
         receive_thread_.join();
+}
+
+void CANInterface::startTransmit()
+{
+    if (transmitting_.exchange(true))
+        return;
+    transmit_thread_ = thread([this]()
+                              { this->transmitLoop(); });
+}
+
+void CANInterface::stopTransmit()
+{
+    if (!transmitting_.exchange(false))
+        return;
+    tx_cv_.notify_all();
+    if (transmit_thread_.joinable())
+        transmit_thread_.join();
+}
+
+void CANInterface::transmitLoop()
+{
+    while (transmitting_)
+    {
+        TxFrame frame{};
+        {
+            std::unique_lock<std::mutex> lk(tx_mutex_);
+            tx_cv_.wait(lk, [this]()
+                        { return !transmitting_ || !tx_queue_.empty(); });
+            if (!transmitting_)
+                return;
+            frame = tx_queue_.front();
+            tx_queue_.pop_front();
+        }
+
+        if (!writeFrame(frame.id, frame.data.data(), frame.dlc))
+        {
+            std::this_thread::sleep_for(std::chrono::microseconds(200));
+            std::lock_guard<std::mutex> lk(tx_mutex_);
+            tx_queue_.push_front(frame);
+        }
+    }
+}
+
+bool CANInterface::waitWritable(int timeout_ms)
+{
+    const int fd = socketFdSnapshot();
+    if (fd < 0)
+        return false;
+    struct pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = POLLOUT;
+    const int ret = poll(&pfd, 1, timeout_ms);
+    return ret > 0 && (pfd.revents & POLLOUT);
+}
+
+bool CANInterface::writeFrame(uint32_t frame_id, const uint8_t *data, uint8_t dlc)
+{
+    const int fd = socketFdSnapshot();
+    if (fd < 0)
+        return false;
+    struct can_frame frame{};
+    frame.can_id = frame_id & CAN_SFF_MASK;
+    frame.can_dlc = dlc;
+    memset(frame.data, 0, sizeof(frame.data));
+    if (dlc > 0)
+    {
+        std::memcpy(frame.data, data, dlc);
+    }
+
+    for (int attempt = 0; attempt < 5; ++attempt)
+    {
+        const int nbytes = write(fd, &frame, sizeof(frame));
+        if (nbytes == static_cast<int>(sizeof(frame)))
+        {
+            return true;
+        }
+        if (nbytes < 0 && (errno == ENOBUFS || errno == EAGAIN))
+        {
+            (void)waitWritable(10);
+            continue;
+        }
+        if (nbytes < 0 && errno == EINTR)
+        {
+            continue;
+        }
+        cerr << "Error: Failed to send CAN frame (non-fatal)." << endl;
+        cerr << "  Socket: " << fd << endl;
+        cerr << "  Frame ID: 0x" << hex << frame_id << dec << endl;
+        cerr << "  errno: " << errno << " (" << strerror(errno) << ")" << endl;
+        return false;
+    }
+    return false;
+}
+
+int CANInterface::socketFdSnapshot()
+{
+    std::lock_guard<std::mutex> lk(socket_mutex_);
+    return can_socket_;
+}
+
+bool CANInterface::reopenSocket()
+{
+    if (interface_name_.empty())
+        return false;
+
+    {
+        std::lock_guard<std::mutex> lk(socket_mutex_);
+        if (can_socket_ >= 0)
+        {
+            close(can_socket_);
+            can_socket_ = -1;
+        }
+    }
+
+    while (receiving_)
+    {
+        if (openSocket(interface_name_))
+        {
+            cerr << "CAN socket reopened on " << interface_name_ << endl;
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+    return false;
 }

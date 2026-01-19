@@ -95,6 +95,7 @@ namespace odrive_can_interface
         std::atomic<bool> running_{false};
         std::atomic<bool> fatal_error_{false};
         std::atomic<bool> deactivating_{false};
+        std::atomic<bool> motors_ready_{false};
         std::string last_error_;
 
 
@@ -104,9 +105,9 @@ namespace odrive_can_interface
         void CanInterface();
     // Frequency control
         using clock = std::chrono::steady_clock;
-        static constexpr std::chrono::microseconds TX_FRE{5000}; // 200 Hz
-        static constexpr std::chrono::microseconds RX_FRE{5000}; // 200 Hz
-        static constexpr std::chrono::microseconds WATCH_DOG_FRE{100000}; // 10 Hz  
+        static constexpr std::chrono::microseconds TX_FRE{20000}; // 50 Hz
+        static constexpr std::chrono::microseconds RX_FRE{10000}; // 100 Hz
+        static constexpr std::chrono::microseconds WATCH_DOG_FRE{200000}; // 5 Hz  
 
     };  
 

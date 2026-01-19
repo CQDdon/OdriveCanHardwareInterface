@@ -22,8 +22,8 @@ public:
         }
         RCLCPP_INFO(this->get_logger(), "CAN interface opened");
 
-        // Tạo các motor với ID 1, 3, 5 (POSITION mode cho homing)
-        std::vector<uint8_t> device_id_homing = {1, 3, 5};
+        // Tạo các motor cho 4 bánh (POSITION mode cho homing)
+        std::vector<uint8_t> device_id_homing = {1, 3, 5, 7};
         
         for (auto id : device_id_homing)
         {
@@ -103,22 +103,7 @@ private:
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
 
-        // Bước 5: Bật closed loop control
-        RCLCPP_INFO(this->get_logger(), "Step 5: Enabling closed loop control...");
-        for (auto &motor : motors_)
-        {
-            if (motor->closeLoopControl())
-            {
-                RCLCPP_INFO(this->get_logger(), "  Device %d: Closed loop enabled", motor->getDeviceId());
-            }
-            else
-            {
-                RCLCPP_ERROR(this->get_logger(), "  Device %d: Failed to enable closed loop", motor->getDeviceId());
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-
-        RCLCPP_INFO(this->get_logger(), "=== Testing sequence completed ===");
+        RCLCPP_INFO(this->get_logger(), "=== Homing sequence completed ===");
     }
 };
 

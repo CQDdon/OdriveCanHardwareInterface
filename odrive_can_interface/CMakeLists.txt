@@ -45,6 +45,7 @@ pluginlib_export_plugin_description_file(hardware_interface odrive_can_interface
 # ===== CAN Test Node =====
 add_executable(odrive_homing src/odrive_homing.cpp src/can_comm.cpp src/odrive_motor)
 add_executable(odrive_close_loop src/odrive_close_loop.cpp src/can_comm.cpp src/odrive_motor)
+add_executable(odrive_set_target src/odrive_set_target.cpp src/can_comm.cpp src/odrive_motor)
 add_executable(odrive_idle src/odrive_idle.cpp src/can_comm.cpp src/odrive_motor)
 add_executable(odrive_calib src/odrive_calib.cpp src/can_comm.cpp src/odrive_motor)
 target_include_directories(odrive_homing    
@@ -57,6 +58,11 @@ target_include_directories(odrive_close_loop
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(odrive_close_loop rclcpp)
+target_include_directories(odrive_set_target    
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(odrive_set_target rclcpp)
 target_include_directories(odrive_idle    
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -87,7 +93,7 @@ install(
 )
 
 # Install CAN test node
-install(TARGETS odrive_homing odrive_close_loop odrive_idle odrive_calib
+install(TARGETS odrive_homing odrive_close_loop odrive_set_target odrive_idle odrive_calib
   DESTINATION lib/${PROJECT_NAME}
 )
 

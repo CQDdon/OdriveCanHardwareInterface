@@ -1,11 +1,11 @@
 // Sample usage:
-// ros2 run odrive_can_interface odrive_test_script --ros-args \
-//   -p can_port:=can0 \
-//   -p device_ids:="[0,1,2,3,4,5,6,7]" \
-//   -p duration_s:=5.0 \
-//   -p max_velocity:=50.0 \
-//   -p max_position:=10.0 \
-//   -p rate_hz:=100.0
+/*ros2 run odrive_can_interface odrive_test_script --ros-args \
+  -p can_port:=can0 \
+  -p device_ids:="[0,1,2,3,4,5,6,7]" \
+  -p duration_s:=5.0 \
+  -p max_velocity:=50.0 \
+  -p max_position:=10.0 \
+  -p rate_hz:=100.0*/
 #include <rclcpp/rclcpp.hpp>
 #include <vector>
 #include <thread>
@@ -100,15 +100,15 @@ private:
     static double triangle(double t, double duration, double peak)
     {
         if (duration <= 0.0)
-            return 0.0;
+            return -peak;
         const double half = duration / 2.0;
         if (t <= 0.0)
-            return 0.0;
+            return -peak;
         if (t >= duration)
             return 0.0;
         if (t <= half)
-            return peak * (t / half);
-        return peak * ((duration - t) / half);
+            return -peak + 2.0 * peak * (t / half);  // -peak -> +peak
+        return peak - peak * ((t - half) / half);  // +peak -> 0
     }
 
     void tick()

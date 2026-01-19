@@ -49,6 +49,14 @@ add_executable(odrive_set_target src/odrive_set_target.cpp src/can_comm.cpp src/
 add_executable(odrive_idle src/odrive_idle.cpp src/can_comm.cpp src/odrive_motor)
 add_executable(odrive_test_script src/odrive_test_script.cpp src/can_comm.cpp src/odrive_motor)
 add_executable(odrive_calib src/odrive_calib.cpp src/can_comm.cpp src/odrive_motor)
+add_executable(odrive_hwi_test src/odrive_hwi_test.cpp)
+target_link_libraries(odrive_hwi_test ${PROJECT_NAME})
+target_include_directories(odrive_hwi_test
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(odrive_hwi_test rclcpp rclcpp_lifecycle hardware_interface)
+
 target_include_directories(odrive_homing    
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -80,6 +88,14 @@ target_include_directories(odrive_calib
     $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(odrive_calib rclcpp)
 
+add_executable(thread_test src/thread_test.cpp)
+target_link_libraries(thread_test ${PROJECT_NAME})
+target_include_directories(thread_test
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(thread_test rclcpp)
+
 # ===== Export headers + lib =====
 install(
   DIRECTORY include/
@@ -99,7 +115,7 @@ install(
 )
 
 # Install CAN test node
-install(TARGETS odrive_homing odrive_close_loop odrive_set_target odrive_idle odrive_test_script odrive_calib
+install(TARGETS odrive_homing odrive_close_loop odrive_set_target odrive_idle odrive_test_script odrive_calib odrive_hwi_test thread_test
   DESTINATION lib/${PROJECT_NAME}
 )
 

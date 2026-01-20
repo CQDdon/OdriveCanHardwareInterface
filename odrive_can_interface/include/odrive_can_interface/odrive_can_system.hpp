@@ -70,6 +70,7 @@ namespace odrive_can_interface
         std::string can_port_{"can0"};
         int baud_rate_{500000};
         bool use_velocity_command_{true};
+        bool close_loop_enabled_{true};
 
         // Transport + driver
         std::shared_ptr<CANInterface> can_;
@@ -105,9 +106,9 @@ namespace odrive_can_interface
         void CanInterface();
     // Frequency control
         using clock = std::chrono::steady_clock;
-        static constexpr std::chrono::microseconds TX_FRE{20000}; // 50 Hz
-        static constexpr std::chrono::microseconds RX_FRE{10000}; // 100 Hz
-        static constexpr std::chrono::microseconds WATCH_DOG_FRE{200000}; // 5 Hz  
+        static constexpr std::chrono::microseconds TX_FRE{15000};
+        static constexpr std::chrono::microseconds RX_FRE{15000};
+        static constexpr std::chrono::microseconds WATCH_DOG_FRE{480000}; 
 
     };  
 

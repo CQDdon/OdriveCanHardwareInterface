@@ -18,7 +18,7 @@ bool OdriveMotor::setControlMode(ControlMode mode)
 
 vector<uint8_t> OdriveMotor::floatToBytes(float value)
 {
-    vector<uint8_t> bytes(sizeof(float));
+    vector<uint8_t> bytes(8, 0);
     memcpy(bytes.data(), &value, sizeof(float));
     return bytes;
 }

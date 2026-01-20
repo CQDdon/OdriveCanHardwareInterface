@@ -1,8 +1,12 @@
 #include "odrive_can_interface/odrive_can_system.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <stdexcept>
+
 namespace odrive_can_interface
 {
-  constexpr uint64_t kHbOnlineTimeoutNs = 200000000ULL; // 200ms, TODO: make configurable
+  constexpr uint64_t kHbOnlineTimeoutNs = 500000000ULL;
 
   // ========== INIT ==========
   hardware_interface::CallbackReturn OdriveCANSystem::on_init(
@@ -37,6 +41,19 @@ namespace odrive_can_interface
         baud_rate_ = std::stoi(info.hardware_parameters.at("baud_rate"));
       else
         baud_rate_ = 500000;
+
+      if (info.hardware_parameters.count("close_loop_enabled"))
+      {
+        std::string val = info.hardware_parameters.at("close_loop_enabled");
+        std::transform(val.begin(), val.end(), val.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (val == "true" || val == "1")
+          close_loop_enabled_ = true;
+        else if (val == "false" || val == "0")
+          close_loop_enabled_ = false;
+        else
+          throw std::invalid_argument("close_loop_enabled must be true/false or 1/0");
+      }
     }
     catch (const std::exception &e)
     {
@@ -102,8 +119,8 @@ namespace odrive_can_interface
     motors_.clear();
     motors_.reserve(n);
 
-    RCLCPP_INFO(logger_, "on_init(): joints=%zu (mode per-joint from URDF), can_port=%s baud=%d",
-                n, can_port_.c_str(), baud_rate_);
+    RCLCPP_INFO(logger_, "on_init(): joints=%zu (mode per-joint from URDF), can_port=%s baud=%d, close_loop_enabled=%s",
+                n, can_port_.c_str(), baud_rate_, close_loop_enabled_ ? "true" : "false");
     return hardware_interface::CallbackReturn::SUCCESS;
   }
 
@@ -531,6 +548,10 @@ namespace odrive_can_interface
           if (!ctrl.motion_enable && action == ControlAction::ClosedLoop)
           {
             effective_action = ControlAction::Idle;
+          }
+          if (!close_loop_enabled_ && effective_action == ControlAction::ClosedLoop)
+          {
+            effective_action = ControlAction::None;
           }
 
           bool send_action = false;

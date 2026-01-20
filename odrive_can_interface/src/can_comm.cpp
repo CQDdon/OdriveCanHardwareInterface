@@ -7,6 +7,7 @@
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <cmath>
 
 using namespace std;
 
@@ -117,16 +118,8 @@ bool CANInterface::sendFrame(uint32_t frame_id, const vector<uint8_t> &data)
     {
         std::copy_n(data.begin(), frame.dlc, frame.data.begin());
     }
-
-    {
-        std::lock_guard<std::mutex> lk(tx_mutex_);
-        if (tx_queue_.size() >= kTxQueueMax)
-        {
-            tx_queue_.pop_front();
-        }
-        tx_queue_.push_back(frame);
-    }
-    tx_cv_.notify_one();
+    if (enqueueFrame(frame))
+        tx_cv_.notify_one();
     return true;
 }
 
@@ -150,7 +143,11 @@ void CANInterface::receiveLoop()
         const int fd = socketFdSnapshot();
         if (fd < 0)
         {
-            return;
+            if (!reopenSocket())
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            continue;
         }
 
         struct pollfd pfd;
@@ -162,7 +159,11 @@ void CANInterface::receiveLoop()
             if (errno == EINTR)
                 continue;
             cerr << "Error: CAN poll failed (" << errno << ": " << strerror(errno) << "). Reopening..." << endl;
-            return;
+            if (!reopenSocket())
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            continue;
         }
         if (poll_ret == 0 || !(pfd.revents & POLLIN))
         {
@@ -180,7 +181,11 @@ void CANInterface::receiveLoop()
                 if (errno == EAGAIN || errno == EWOULDBLOCK)
                     break;
                 cerr << "Error: CAN read failed (" << errno << ": " << strerror(errno) << "). Reopening..." << endl;
-                return;
+                if (!reopenSocket())
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                }
+                break;
             }
             if (nbytes < static_cast<int>(sizeof(frame)))
             {
@@ -257,11 +262,23 @@ void CANInterface::transmitLoop()
             tx_queue_.pop_front();
         }
 
-        if (!writeFrame(frame.id, frame.data.data(), frame.dlc))
+        const WriteStatus status = writeFrame(frame.id, frame.data.data(), frame.dlc);
+        if (status == WriteStatus::kOk)
+            continue;
+        if (status == WriteStatus::kRetry)
         {
-            std::this_thread::sleep_for(std::chrono::microseconds(200));
-            std::lock_guard<std::mutex> lk(tx_mutex_);
-            tx_queue_.push_front(frame);
+            if (frame.retry_count < kTxRetryMax)
+            {
+                ++frame.retry_count;
+                const int backoff_ms = std::min<int>(kTxRetryBackoffMaxMs, 1 << std::min<int>(frame.retry_count, 6));
+                std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+                if (requeueFrameForRetry(frame))
+                    tx_cv_.notify_one();
+            }
+            else
+            {
+                cerr << "Warning: dropping CAN frame after retry limit." << endl;
+            }
         }
     }
 }
@@ -278,11 +295,11 @@ bool CANInterface::waitWritable(int timeout_ms)
     return ret > 0 && (pfd.revents & POLLOUT);
 }
 
-bool CANInterface::writeFrame(uint32_t frame_id, const uint8_t *data, uint8_t dlc)
+CANInterface::WriteStatus CANInterface::writeFrame(uint32_t frame_id, const uint8_t *data, uint8_t dlc)
 {
     const int fd = socketFdSnapshot();
     if (fd < 0)
-        return false;
+        return WriteStatus::kRetry;
     struct can_frame frame{};
     frame.can_id = frame_id & CAN_SFF_MASK;
     frame.can_dlc = dlc;
@@ -297,7 +314,7 @@ bool CANInterface::writeFrame(uint32_t frame_id, const uint8_t *data, uint8_t dl
         const int nbytes = write(fd, &frame, sizeof(frame));
         if (nbytes == static_cast<int>(sizeof(frame)))
         {
-            return true;
+            return WriteStatus::kOk;
         }
         if (nbytes < 0 && (errno == ENOBUFS || errno == EAGAIN))
         {
@@ -312,9 +329,9 @@ bool CANInterface::writeFrame(uint32_t frame_id, const uint8_t *data, uint8_t dl
         cerr << "  Socket: " << fd << endl;
         cerr << "  Frame ID: 0x" << hex << frame_id << dec << endl;
         cerr << "  errno: " << errno << " (" << strerror(errno) << ")" << endl;
-        return false;
+        return WriteStatus::kFatal;
     }
-    return false;
+    return WriteStatus::kRetry;
 }
 
 int CANInterface::socketFdSnapshot()
@@ -347,4 +364,90 @@ bool CANInterface::reopenSocket()
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
     return false;
+}
+
+bool CANInterface::framesEqual(const TxFrame &a, const TxFrame &b)
+{
+    if (a.id != b.id || a.dlc != b.dlc)
+        return false;
+    return std::memcmp(a.data.data(), b.data.data(), a.dlc) == 0;
+}
+
+bool CANInterface::isSetTargetCommand(uint32_t frame_id)
+{
+    const uint8_t cmd = static_cast<uint8_t>(frame_id & 0x1F);
+    return cmd == 0x0C || cmd == 0x0D || cmd == 0x0E;
+}
+
+bool CANInterface::floatDeltaSmall(const TxFrame &a, const TxFrame &b)
+{
+    if (a.dlc != b.dlc || a.dlc < sizeof(float))
+        return false;
+    if (a.dlc > sizeof(float))
+    {
+        const size_t tail = a.dlc - sizeof(float);
+        if (std::memcmp(a.data.data() + sizeof(float), b.data.data() + sizeof(float), tail) != 0)
+            return false;
+    }
+    float va = 0.0f;
+    float vb = 0.0f;
+    std::memcpy(&va, a.data.data(), sizeof(float));
+    std::memcpy(&vb, b.data.data(), sizeof(float));
+    return std::fabs(va - vb) <= kTargetEpsilon;
+}
+
+bool CANInterface::enqueueFrame(const TxFrame &frame)
+{
+    std::lock_guard<std::mutex> lk(tx_mutex_);
+#if 0
+    // TEMP: disable duplicate/epsilon filter for testing.
+    const auto last_it = last_desired_frames_.find(frame.id);
+    if (last_it != last_desired_frames_.end())
+    {
+        if (framesEqual(last_it->second, frame))
+            return false;
+        if (isSetTargetCommand(frame.id) && floatDeltaSmall(last_it->second, frame))
+            return false;
+    }
+#endif
+
+    last_desired_frames_[frame.id] = frame;
+
+    for (auto it = tx_queue_.begin(); it != tx_queue_.end(); ++it)
+    {
+        if (it->id == frame.id)
+        {
+            tx_queue_.erase(it);
+            break;
+        }
+    }
+    if (tx_queue_.size() >= kTxQueueMax)
+    {
+        tx_queue_.pop_front();
+    }
+    tx_queue_.push_back(frame);
+    return true;
+}
+
+bool CANInterface::requeueFrameForRetry(const TxFrame &frame)
+{
+    std::lock_guard<std::mutex> lk(tx_mutex_);
+    const auto last_it = last_desired_frames_.find(frame.id);
+    if (last_it == last_desired_frames_.end())
+        return false;
+    if (!framesEqual(last_it->second, frame))
+        return false;
+
+    for (const auto &queued : tx_queue_)
+    {
+        if (queued.id == frame.id)
+            return false;
+    }
+
+    if (tx_queue_.size() >= kTxQueueMax)
+    {
+        tx_queue_.pop_front();
+    }
+    tx_queue_.push_back(frame);
+    return true;
 }

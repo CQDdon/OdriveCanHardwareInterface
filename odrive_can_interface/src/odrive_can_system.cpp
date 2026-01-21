@@ -6,7 +6,7 @@
 
 namespace odrive_can_interface
 {
-  constexpr uint64_t kHbOnlineTimeoutNs = 500000000ULL;
+  constexpr uint64_t kHbOnlineTimeoutNs = 1000000000ULL; // 200ms, TODO: make configurable
 
   // ========== INIT ==========
   hardware_interface::CallbackReturn OdriveCANSystem::on_init(
@@ -267,13 +267,8 @@ namespace odrive_can_interface
     shmitf_.close();
     deactivating_ = true;
     running_ = false;
+    std::this_thread::sleep_for(std::chrono::milliseconds(500)); // Wait for all threads to stop
 
-    if (can_receive_thread_.joinable())
-      can_receive_thread_.join();
-    if (can_interface_thread_.joinable())
-      can_interface_thread_.join();
-    if (watch_dog_thread_.joinable())
-      watch_dog_thread_.join();
 
     return hardware_interface::CallbackReturn::SUCCESS;
   }
@@ -283,6 +278,12 @@ namespace odrive_can_interface
       const rclcpp_lifecycle::State &)
   {
     RCLCPP_INFO(logger_, "on_cleanup(): releasing resources...");
+    if (can_receive_thread_.joinable())
+      can_receive_thread_.join();
+    if (can_interface_thread_.joinable())
+      can_interface_thread_.join();
+    if (watch_dog_thread_.joinable())
+      watch_dog_thread_.join();
     return hardware_interface::CallbackReturn::SUCCESS;
   }
 
@@ -508,6 +509,20 @@ namespace odrive_can_interface
     while (running_ || deactivating_)
     {
       next_time += TX_FRE;
+      if (deactivating_)
+      {
+        RCLCPP_INFO(can_transmit_logger_, "Deactivating motors..., sending IDLE");
+        const size_t axis_count = std::min(motors_.size(), last_axis_action_.size());
+        for (size_t i = 0; i < axis_count; ++i)
+        {
+          (void)motors_[i]->idle();
+          last_axis_action_[i] = ControlAction::Idle;
+        }
+        deactivating_ = false;
+        running_ = false;
+        std::this_thread::sleep_until(next_time);
+        continue;
+      }
       if (shmitf_.ready())
       {
         const auto *ctrl_ptr = shmitf_.control();
@@ -522,19 +537,6 @@ namespace odrive_can_interface
         const size_t axis_count = std::min(
             static_cast<size_t>(ctrl.axis_count), motors_.size());
         const size_t action_count = std::min(axis_count, last_axis_action_.size());
-
-        if (deactivating_)
-        {
-          for (size_t i = 0; i < axis_count; ++i)
-          {
-            (void)motors_[i]->idle();
-            last_axis_action_[i] = ControlAction::Idle;
-          }
-          deactivating_ = false;
-          running_ = false;
-          std::this_thread::sleep_until(next_time);
-          continue;
-        }
 
         for (size_t i = 0; i < axis_count; ++i)
         {

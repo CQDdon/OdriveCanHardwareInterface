@@ -114,6 +114,19 @@ private:
     void tick()
     {
         const double t = std::chrono::duration<double>(clock::now() - start_time_).count();
+
+        if (t >= duration_s_)
+        {
+            // Send zero once, then stop timer
+            for (const auto &entry : motors_)
+            {
+                (void)entry.motor->setTarget(0.0f);
+            }
+            RCLCPP_INFO(this->get_logger(), "Test completed, stop sending.");
+            if (timer_) timer_->cancel();
+            return;
+        }
+
         const double v = triangle(t, duration_s_, max_velocity_);
         const double p = triangle(t, duration_s_, max_position_);
 

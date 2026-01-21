@@ -106,9 +106,9 @@ namespace odrive_can_interface
         void CanInterface();
     // Frequency control
         using clock = std::chrono::steady_clock;
-        static constexpr std::chrono::microseconds TX_FRE{15000};
-        static constexpr std::chrono::microseconds RX_FRE{15000};
-        static constexpr std::chrono::microseconds WATCH_DOG_FRE{480000}; 
+        static constexpr std::chrono::microseconds TX_FRE{15000}; // 50 Hz
+        static constexpr std::chrono::microseconds RX_FRE{15000}; // 100 Hz
+        static constexpr std::chrono::microseconds WATCH_DOG_FRE{480000}; // 5 Hz  
 
     };  
 

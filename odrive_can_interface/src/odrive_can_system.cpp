@@ -7,6 +7,7 @@
 namespace odrive_can_interface
 {
   constexpr uint64_t kHbOnlineTimeoutNs = 1000000000ULL; // 200ms, TODO: make configurable
+  constexpr uint64_t kHbOnlineTimeoutNs = 500000000ULL;
 
   // ========== INIT ==========
   hardware_interface::CallbackReturn OdriveCANSystem::on_init(
